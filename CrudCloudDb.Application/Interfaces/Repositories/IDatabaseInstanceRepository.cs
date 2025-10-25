@@ -1,0 +1,6 @@
+﻿namespace CrudCloudDb.Application.Interfaces.Repositories;
+
+public class IDatabaseInstanceRepository
+{
+    
+}
