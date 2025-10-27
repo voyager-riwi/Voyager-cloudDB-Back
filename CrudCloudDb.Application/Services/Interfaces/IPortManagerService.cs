@@ -1,6 +1,12 @@
-namespace CrudCloudDb.Application.Services.Interfaces;
+using CrudCloudDb.Core.Enums;
 
-public interface IPortManagerService
+namespace CrudCloudDb.Application.Services.Interfaces
 {
-    
+    public interface IPortManagerService
+    {
+        Task<int> GetAvailablePortAsync(DatabaseEngine engine);
+        Task<bool> IsPortAvailableAsync(int port);
+        Task ReleasePortAsync(int port);
+        Task<IEnumerable<int>> GetUsedPortsAsync();
+    }
 }
