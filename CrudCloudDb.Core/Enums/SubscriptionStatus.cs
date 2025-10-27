@@ -1,6 +1,10 @@
-﻿namespace CrudCloudDb.Core.Enums;
-
-public class SubscriptionStatus
+﻿namespace CrudCloudDb.Core.Enums
 {
-    
+    public enum SubscriptionStatus
+    {
+        Active,
+        Cancelled,
+        Expired,
+        PaymentFailed
+    }
 }
