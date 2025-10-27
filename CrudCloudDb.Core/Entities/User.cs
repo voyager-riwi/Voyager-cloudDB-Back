@@ -1,4 +1,4 @@
-﻿using CrudCloudDb.Core.Entities;
+using CrudCloudDb.Core.Entities;
 using System.ComponentModel.DataAnnotations;
 
 namespace CrudCloudDb.Core.Entities
