@@ -1,6 +1,6 @@
 ﻿namespace CrudCloudDb.Application.Services.Interfaces;
 
-public class IWebhookService
+public interface IWebhookService
 {
     
 }

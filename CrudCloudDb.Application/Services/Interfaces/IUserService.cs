@@ -1,6 +1,6 @@
 ﻿namespace CrudCloudDb.Application.Services.Interfaces;
 
-public class IUserService
+public interface IUserService
 {
     
 }

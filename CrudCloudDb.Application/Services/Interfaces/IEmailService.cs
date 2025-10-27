@@ -1,6 +1,6 @@
 ﻿namespace CrudCloudDb.Application.Services.Interfaces;
 
-public class IEmailService
+public interface IEmailService
 {
     
 }
