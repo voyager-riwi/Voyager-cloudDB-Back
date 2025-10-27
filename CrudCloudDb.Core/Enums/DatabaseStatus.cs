@@ -1,6 +1,11 @@
-﻿namespace CrudCloudDb.Core.Enums;
-
-public class DatabaseStatus
+﻿namespace CrudCloudDb.Core.Enums
 {
-    
+    public enum DatabaseStatus
+    {
+        Creating,
+        Running,
+        Stopped,
+        Error,
+        Deleted
+    }
 }

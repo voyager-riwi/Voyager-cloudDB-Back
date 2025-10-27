@@ -1,6 +1,12 @@
-﻿namespace CrudCloudDb.Core.Enums;
-
-public class WebhookEventType
+﻿namespace CrudCloudDb.Core.Enums
 {
-    
+    public enum WebhookEventType
+    {
+        UserCreated,
+        DatabaseCreated,
+        DatabaseDeleted,
+        SubscriptionStarted,
+        SubscriptionCancelled,
+        ProductionError
+    }
 }
