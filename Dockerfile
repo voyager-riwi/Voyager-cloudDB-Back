@@ -24,7 +24,7 @@ WORKDIR /app
 COPY --from=build /app/publish .
 
 # Expone el puerto
-EXPOSE 8080
+EXPOSE 8081
 
 # Punto de entrada
 ENTRYPOINT ["dotnet", "CrudCloudDb.API.dll"]

@@ -86,4 +86,4 @@ Thumbs.db
 DockerLearning/
 DockerTest/
 DockerExperiments/
-tests/
+tests/appsettings.Production.json
