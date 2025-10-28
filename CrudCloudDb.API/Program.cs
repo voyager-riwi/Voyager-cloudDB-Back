@@ -12,7 +12,19 @@ using Microsoft.Extensions.Hosting;
 //  Builder Initialization
 // =======================
 var builder = WebApplication.CreateBuilder(args);
+// Configurar para escuchar en puerto 8081 (Docker)
+builder.WebHost.UseUrls("http://0.0.0.0:8081");
 
+// Configurar CORS para que el frontend pueda consumir
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -32,17 +44,17 @@ builder.Services.AddSwaggerGen();
 //  Build App
 // =======================
 var app = builder.Build();
+// Usar CORS
+app.UseCors("AllowAll");
 
 // =======================
 //  Middleware Configuration
 // =======================
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseSwagger();
+app.UseSwaggerUI();
 
-app.UseHttpsRedirection();
+
+//app.UseHttpsRedirection();
 
 // =======================
 //  Endpoint Mapping
