@@ -1,42 +1,44 @@
-// =======================
-// 1️⃣ Using Statements
-// =======================
-using CrudCloudDb.API.Middleware; // Para nuestros middlewares
+using CrudCloudDb.API.Middleware;
+using CrudCloudDb.Application.Interfaces.Repositories; // <-- Añade este using
+using CrudCloudDb.Application.Services.Interfaces;    // <-- Añade este using
 using CrudCloudDb.Infrastructure.Data;
+using CrudCloudDb.Infrastructure.Repositories;      // <-- Añade este using
+using CrudCloudDb.Infrastructure.Services;          // <-- Añade este using
 using Microsoft.EntityFrameworkCore;
-using Microsoft.OpenApi.Models; // Para la configuración de Swagger
-using Serilog; // Para Serilog
+using Microsoft.OpenApi.Models;
+using Serilog;
 
-// =======================
-//  Builder Initialization
-// =======================
 var builder = WebApplication.CreateBuilder(args);
 
-// =======================
-//  Serilog Configuration
-// =======================
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.FromLogContext()
     .WriteTo.Console()
-    .WriteTo.File("logs/crudclouddb-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
+    .WriteTo.File("logs/crudclouddb-.txt", rollingInterval: RollingInterval.Day)
     .CreateLogger();
 
 builder.Host.UseSerilog();
 
-// =======================
-//  Service Configuration
-// =======================
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString)
         .UseSnakeCaseNamingConvention());
 
-// Controllers
+builder.Services.AddHealthChecks()
+    .AddNpgSql(connectionString, name: "PostgreSQL Health Check");
+
 builder.Services.AddControllers();
 
-// Swagger/OpenAPI
+builder.Services.AddScoped<IPlanRepository, PlanRepository>();
+builder.Services.AddScoped<IAuditLogRepository, AuditLogRepository>();
+builder.Services.AddScoped<IEmailLogRepository, EmailLogRepository>();
+
+builder.Services.AddScoped<IEmailService, EmailService>();
+
+builder.Services.AddScoped<ICredentialService, CredentialService>();
+
 builder.Services.AddEndpointsApiExplorer();
+
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
@@ -46,10 +48,9 @@ builder.Services.AddSwaggerGen(c =>
         Description = "API para la plataforma de gestión de bases de datos en la nube."
     });
 
-    // Configuración de JWT en Swagger
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = "Autorización JWT usando el esquema Bearer. Ingrese 'Bearer' [espacio] y luego su token.",
+        Description = "Autenticación JWT con Bearer token. Formato: 'Bearer {token}'",
         Name = "Authorization",
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.ApiKey,
@@ -72,21 +73,11 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-
-// =======================
-//  Build App
-// =======================
 var app = builder.Build();
 
-// ===================================
-//  Middleware Configuration (IMPORTANTE EL ORDEN)
-// ===================================
-
-// 1. Middleware para manejo de errores (debe ser el primero)
 app.UseMiddleware<ErrorHandlingMiddleware>();
-
-// 2. Middleware de logging de peticiones de Serilog
 app.UseSerilogRequestLogging();
+app.UseMiddleware<AuditMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
@@ -96,19 +87,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-// app.UseAuthentication(); // Se configurará por Miguel
-app.UseAuthorization();
+app.MapControllers();
+app.MapHealthChecks("/health");
 
-// 3. Middleware de auditoría (después de auth para tener el contexto de usuario)
-app.UseMiddleware<AuditMiddleware>();
-
-
-// =======================
-//  Endpoint Mapping
-// =======================
-app.MapControllers(); // Habilita el mapeo de los controllers
-
-// =======================
-//  Run App
-// =======================
 app.Run();

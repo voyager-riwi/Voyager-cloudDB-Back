@@ -1,17 +1,18 @@
-﻿// CrudCloudDb.Infrastructure/Services/EmailService.cs
-
-using System.Net;
+﻿using System.Net;
 using System.Net.Mail;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using CrudCloudDb.Application.Services.Interfaces;
 using CrudCloudDb.Application.DTOs.Email;
+using CrudCloudDb.Application.Interfaces.Repositories;
+using CrudCloudDb.Core.Entities;
 
 namespace CrudCloudDb.Infrastructure.Services
 {
     public class EmailService : IEmailService
     {
         private readonly IConfiguration _configuration;
+        private readonly IEmailLogRepository _emailLogRepository;
         private readonly ILogger<EmailService> _logger;
         private readonly string _smtpServer;
         private readonly int _smtpPort;
@@ -22,18 +23,19 @@ namespace CrudCloudDb.Infrastructure.Services
 
         public EmailService(
             IConfiguration configuration,
+            IEmailLogRepository emailLogRepository,
             ILogger<EmailService> logger)
         {
             _configuration = configuration;
+            _emailLogRepository = emailLogRepository;
             _logger = logger;
-
-            // Leer configuración de appsettings.json
-            _smtpServer = _configuration["EmailSettings:SmtpServer"] ?? "smtp.gmail.com";
+            
+            _smtpServer = _configuration["EmailSettings:SmtpServer"] ?? throw new InvalidOperationException("EmailSettings:SmtpServer is not configured.");
             _smtpPort = int.Parse(_configuration["EmailSettings:SmtpPort"] ?? "587");
-            _senderEmail = _configuration["EmailSettings:SenderEmail"] ?? "";
+            _senderEmail = _configuration["EmailSettings:SenderEmail"] ?? throw new InvalidOperationException("EmailSettings:SenderEmail is not configured.");
             _senderName = _configuration["EmailSettings:SenderName"] ?? "CrudCloudDb";
-            _username = _configuration["EmailSettings:Username"] ?? "";
-            _password = _configuration["EmailSettings:Password"] ?? "";
+            _username = _configuration["EmailSettings:Username"] ?? throw new InvalidOperationException("EmailSettings:Username is not configured.");
+            _password = _configuration["EmailSettings:Password"] ?? throw new InvalidOperationException("EmailSettings:Password is not configured.");
         }
 
         public async Task SendDatabaseCreatedEmailAsync(DatabaseCreatedEmailDto dto)
@@ -273,6 +275,14 @@ namespace CrudCloudDb.Infrastructure.Services
 
         public async Task SendEmailAsync(string to, string subject, string body)
         {
+            var log = new EmailLog
+            {
+                To = to,
+                Subject = subject,
+                Body = body,
+                SentAt = DateTime.UtcNow
+            };
+
             try
             {
                 using var smtpClient = new SmtpClient(_smtpServer, _smtpPort)
@@ -288,17 +298,22 @@ namespace CrudCloudDb.Infrastructure.Services
                     Body = body,
                     IsBodyHtml = true
                 };
-
                 mailMessage.To.Add(to);
 
                 await smtpClient.SendMailAsync(mailMessage);
 
-                _logger.LogInformation($"✅ Email enviado a {to}: {subject}");
+                log.IsSent = true;
+                _logger.LogInformation("✅ Email sent successfully to {To}", to);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"❌ Error enviando email a {to}");
-                // No lanzar excepción para no romper el flujo principal
+                log.IsSent = false;
+                log.ErrorMessage = ex.Message;
+                _logger.LogError(ex, "❌ Failed to send email to {To}", to);
+            }
+            finally
+            {
+                await _emailLogRepository.AddAsync(log);
             }
         }
     }

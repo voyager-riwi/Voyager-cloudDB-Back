@@ -1,4 +1,4 @@
-﻿using System.Net;
+﻿using System.Net; 
 using System.Text.Json;
 
 namespace CrudCloudDb.API.Middleware
@@ -22,33 +22,36 @@ namespace CrudCloudDb.API.Middleware
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Ocurrió una excepción no controlada");
+                _logger.LogError(ex, "Ocurrió una excepción no controlada: {Message}", ex.Message);
+                
                 await HandleExceptionAsync(context, ex);
             }
         }
 
         private static Task HandleExceptionAsync(HttpContext context, Exception exception)
         {
-            var statusCode = HttpStatusCode.InternalServerError;
-            var message = "Ocurrió un error inesperado al procesar su solicitud."; // Texto para el usuario en español
-
-            // Aquí podrías añadir más tipos de excepciones específicas
-            if (exception is UnauthorizedAccessException)
+            var statusCode = HttpStatusCode.InternalServerError; // Por defecto es 500
+            var message = "Ocurrió un error inesperado al procesar tu solicitud.";
+            var errorType = exception.GetType().Name;
+            
+            switch (exception)
             {
-                statusCode = HttpStatusCode.Unauthorized;
-                message = exception.Message;
-            }
-            else if (exception is ArgumentException || exception is InvalidOperationException)
-            {
-                statusCode = HttpStatusCode.BadRequest;
-                message = exception.Message;
+                case UnauthorizedAccessException:
+                    statusCode = HttpStatusCode.Unauthorized;
+                    message = "No tienes autorización para realizar esta acción.";
+                    break;
+                case ArgumentException:
+                case InvalidOperationException:
+                    statusCode = HttpStatusCode.BadRequest;
+                    message = exception.Message; 
+                    break;
             }
 
             var response = new
             {
                 success = false,
-                message = message,
-                errorType = exception.GetType().Name
+                message,
+                error = errorType
             };
 
             context.Response.ContentType = "application/json";
