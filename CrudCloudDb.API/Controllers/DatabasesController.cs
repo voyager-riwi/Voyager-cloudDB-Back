@@ -1,6 +1,16 @@
-﻿namespace CrudCloudDb.API.Controllers;
+﻿using Microsoft.AspNetCore.Mvc;
 
-public class DatabasesController
+namespace CrudCloudDb.API.Controllers
 {
-    
+    [ApiController]
+    [Route("api/[controller]")]
+    public class DatabasesController : ControllerBase
+    {
+        private readonly ILogger<DatabasesController> _logger;
+
+        public DatabasesController(ILogger<DatabasesController> logger)
+        {
+            _logger = logger;
+        }
+    }
 }

@@ -16,7 +16,14 @@
       "launchUrl": "swagger",
       "applicationUrl": "http://localhost:5191",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ConnectionStrings__DefaultConnection": "Host=91.98.42.248;Database=crud_cloud_db;Username=postgres;Password=cambiarestapassword;Port=5432",
+        "EmailSettings__SmtpServer": "smtp.gmail.com",
+        "EmailSettings__SmtpPort": "587",
+        "EmailSettings__SenderEmail": "vanessagomezlopez55@gmail.com",
+        "EmailSettings__SenderName": "CrudCloudDb Platform",
+        "EmailSettings__Username": "vanessagomezlopez55@gmail.com",
+        "EmailSettings__Password": "1234Anasofia"
       }
     },
     "https": {
@@ -26,7 +33,14 @@
       "launchUrl": "swagger",
       "applicationUrl": "https://localhost:7295;http://localhost:5191",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ConnectionStrings__DefaultConnection": "Host=91.98.42.248;Database=crud_cloud_db;Username=postgres;Password=cambiarestapassword;Port=5432",
+        "EmailSettings__SmtpServer": "smtp.gmail.com",
+        "EmailSettings__SmtpPort": "587",
+        "EmailSettings__SenderEmail": "vanessagomezlopez55@gmail.com",
+        "EmailSettings__SenderName": "CrudCloudDb Platform",
+        "EmailSettings__Username": "vanessagomezlopez55@gmail.com",
+        "EmailSettings__Password": "1234Anasofia"
       }
     },
     "IIS Express": {
