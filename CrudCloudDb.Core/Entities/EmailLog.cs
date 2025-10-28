@@ -4,7 +4,7 @@ namespace CrudCloudDb.Core.Entities
 {
     public class EmailLog
     {
-        public Guid Id { get; set; }
+        public Guid Id { get; set; } = Guid.NewGuid();
         
         [Required]
         [EmailAddress]
