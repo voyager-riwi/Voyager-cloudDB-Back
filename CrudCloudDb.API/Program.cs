@@ -57,14 +57,26 @@ app.UseSwaggerUI();
 //app.UseHttpsRedirection();
 
 // =======================
-//  Endpoint Mapping
+// 8️⃣ Endpoint Mapping
 // =======================
-// Aquí irán tus endpoints personalizados
-app.MapGet("/", () => "Hello World!")
+
+// Root endpoint
+app.MapGet("/", () => "CrudCloudDb API is running! 🚀")
     .WithName("RootEndpoint")
     .WithOpenApi();
 
+// Health check endpoint
+app.MapGet("/health", () => new
+    {
+        status = "healthy",
+        timestamp = DateTime.UtcNow,
+        environment = app.Environment.EnvironmentName,
+        version = "1.0.0"
+    })
+    .WithName("HealthCheck")
+    .WithOpenApi();
+
 // =======================
-//  Run App
+// 9️⃣ Run App
 // =======================
 app.Run();
