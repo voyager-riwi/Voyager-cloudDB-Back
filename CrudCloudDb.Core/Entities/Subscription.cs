@@ -6,7 +6,7 @@ namespace CrudCloudDb.Core.Entities
 {
     public class Subscription
     {
-        public Guid Id { get; set; }
+        public Guid Id { get; set; }  = Guid.NewGuid();
         
         [Required]
         public Guid UserId { get; set; }

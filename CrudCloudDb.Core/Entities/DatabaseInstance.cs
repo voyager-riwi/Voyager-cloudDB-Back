@@ -6,7 +6,7 @@ namespace CrudCloudDb.Core.Entities
 {
     public class DatabaseInstance
     {
-        public Guid Id { get; set; }
+        public Guid Id { get; set; }  = Guid.NewGuid();
 
         [Required]
         [MaxLength(100)]
