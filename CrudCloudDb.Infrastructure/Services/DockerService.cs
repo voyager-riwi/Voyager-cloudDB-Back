@@ -34,8 +34,7 @@ namespace CrudCloudDb.Infrastructure.Services
 
             // Conectar a Docker
             _dockerClient = new DockerClientConfiguration(
-                new Uri("unix:///var/run/docker.sock"))  // Linux
-                // new Uri("npipe://./pipe/docker_engine"))  // Windows
+                    new Uri("npipe://./pipe/docker_engine"))  // ✅ Windows
                 .CreateClient();
         }
 
