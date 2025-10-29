@@ -1,42 +1,24 @@
 // =======================
 // 1️⃣ Using Statements
 // =======================
-using CrudCloudDb.Infrastructure.Data;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting; 
-using Microsoft.OpenApi.Models;
 
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Application.Services.Implementation;
 using CrudCloudDb.Application.Services.Interfaces;
+using CrudCloudDb.Infrastructure.Data;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
 using CrudCloudDb.Infrastructure.Repositories;
-
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 
 // =======================
-// 2️⃣ Builder Initialization
+//  Builder Initialization
 // =======================
 var builder = WebApplication.CreateBuilder(args);
 
-// =======================
-// 3️⃣ Port Configuration (Flexible)
-// =======================
-
-var port = builder.Configuration.GetValue<string>("AppSettings:Port") ?? "8080";
-var host = builder.Configuration.GetValue<string>("AppSettings:Host") ?? "localhost";
-
-if (builder.Environment.IsProduction())
-{
-    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
-}
-
-// =======================
-// 4️⃣ CORS Configuration
-// =======================
 
 builder.Services.AddCors(options =>
 {
@@ -59,7 +41,6 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 // =======================
 //  JWT configuration 
 // =======================
-
 
 builder.Services.AddAuthentication(options =>
     {
@@ -85,9 +66,6 @@ builder.Services.AddAuthentication(options =>
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret))
         };
     });
-
-
-
 
 // =======================
 // 6️⃣ Service Configuration
@@ -125,11 +103,11 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-
 builder.Services.AddControllers();
 
 // TODO: Aquí irán los servicios
 // builder.Services.AddScoped<IDockerService, DockerService>();
+
 // Registro de repositorios
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IPlanRepository, PlanRepository>();
@@ -138,6 +116,7 @@ builder.Services.AddScoped<IPlanRepository, PlanRepository>();
 // Registro de servicios
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
+
 // =======================
 // 7️⃣ Build App
 // =======================
@@ -148,18 +127,13 @@ var app = builder.Build();
 // =======================
 // ¡OJO! El orden del middleware es MUY importante.
 
-
 app.UseCors("AllowAll");
 
 // Swagger (configuración flexible por ambiente)
 if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
 {
     app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "CrudCloudDb API v1");
-        c.RoutePrefix = "swagger";
-    });
+    app.UseSwaggerUI();
 }
 
 // HTTPS Redirect (flexible)
@@ -168,15 +142,13 @@ if (app.Environment.IsDevelopment() && !builder.Configuration.GetValue<bool>("Is
     app.UseHttpsRedirection();
 }
 
-// --- AÑADIDOS DESDE EL ARCHIVO 2 ---
-// Deben ir DESPUÉS de CORS y ANTES de MapControllers
+// Autenticación y Autorización - DEBEN ir DESPUÉS de CORS y ANTES de MapControllers
 app.UseAuthentication(); 
 app.UseAuthorization();
 
 // =======================
 // 9️⃣ Endpoint Mapping
 // =======================
-
 
 app.MapGet("/", () => Results.Ok(new
 {
@@ -196,7 +168,6 @@ app.MapGet("/health", () => Results.Ok(new
 }))
     .WithName("HealthCheck")
     .WithOpenApi();
-
 
 app.MapControllers();
 

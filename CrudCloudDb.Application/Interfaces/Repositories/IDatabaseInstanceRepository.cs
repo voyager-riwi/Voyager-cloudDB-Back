@@ -1,46 +1,44 @@
-﻿// CrudCloudDb.Application/Interfaces/Repositories/IDatabaseInstanceRepository.cs
-
-using CrudCloudDb.Core.Entities;
+﻿using CrudCloudDb.Core.Entities;
 
 namespace CrudCloudDb.Application.Interfaces.Repositories
 {
     /// <summary>
-    /// Repositorio para operaciones de base de datos con DatabaseInstance
+    /// Interfaz para el repositorio de instancias de bases de datos
     /// </summary>
     public interface IDatabaseInstanceRepository
     {
         /// <summary>
-        /// Obtiene una instancia por su ID
-        /// </summary>
-        Task<DatabaseInstance?> GetByIdAsync(Guid id);
-
-        /// <summary>
-        /// Obtiene una instancia por su Container ID de Docker
-        /// </summary>
-        Task<DatabaseInstance?> GetByContainerIdAsync(string containerId);
-
-        /// <summary>
-        /// Obtiene todas las instancias de un usuario
-        /// </summary>
-        Task<IEnumerable<DatabaseInstance>> GetByUserIdAsync(Guid userId);
-
-        /// <summary>
-        /// Obtiene todas las instancias activas (Running)
-        /// </summary>
-        Task<IEnumerable<DatabaseInstance>> GetAllActiveAsync();
-
-        /// <summary>
-        /// Crea una nueva instancia
+        /// Crea una nueva instancia de base de datos
         /// </summary>
         Task<DatabaseInstance> CreateAsync(DatabaseInstance databaseInstance);
 
         /// <summary>
-        /// Actualiza una instancia existente
+        /// Obtiene una instancia de base de datos por ID
+        /// </summary>
+        Task<DatabaseInstance?> GetByIdAsync(Guid id);
+
+        /// <summary>
+        /// Obtiene una instancia de base de datos por container ID
+        /// </summary>
+        Task<DatabaseInstance?> GetByContainerIdAsync(string containerId);
+
+        /// <summary>
+        /// Obtiene todas las bases de datos de un usuario
+        /// </summary>
+        Task<IEnumerable<DatabaseInstance>> GetByUserIdAsync(Guid userId);
+
+        /// <summary>
+        /// Obtiene todas las bases de datos activas
+        /// </summary>
+        Task<IEnumerable<DatabaseInstance>> GetAllActiveAsync();
+
+        /// <summary>
+        /// Actualiza una instancia de base de datos
         /// </summary>
         Task UpdateAsync(DatabaseInstance databaseInstance);
 
         /// <summary>
-        /// Elimina una instancia
+        /// Elimina una instancia de base de datos
         /// </summary>
         Task DeleteAsync(Guid id);
     }

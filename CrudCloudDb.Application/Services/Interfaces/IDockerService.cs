@@ -49,6 +49,8 @@ namespace CrudCloudDb.Application.Services.Interfaces
         Task<PasswordResetResult> ResetDatabasePasswordAsync(
             DatabaseInstance dbInstance,
             User user);
+
+        Task<bool> DeleteDatabaseAsync(DatabaseInstance database, User user);
     }
 
     /// <summary>
