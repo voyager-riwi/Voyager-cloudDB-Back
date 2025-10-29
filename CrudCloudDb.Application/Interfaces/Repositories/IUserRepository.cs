@@ -2,10 +2,10 @@
 
 namespace CrudCloudDb.Application.Interfaces.Repositories;
 
-public class IUserRepository
+public interface IUserRepository
 {
-    public async Task<User> GetByIdAsync(Guid userId)
-    {
-        throw new NotImplementedException();
-    }
+    Task<User?> GetByIdAsync(Guid userId);
+    Task<User?> GetByEmailAsync(string email);
+    Task<User> CreateAsync(User user);
+    Task<bool> IsEmailTakenAsync(string email);
 }

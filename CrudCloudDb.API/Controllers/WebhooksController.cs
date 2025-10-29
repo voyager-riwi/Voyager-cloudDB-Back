@@ -1,6 +1,16 @@
-﻿namespace CrudCloudDb.API.Controllers;
+﻿using Microsoft.AspNetCore.Mvc;
 
-public class WebhooksController
+namespace CrudCloudDb.API.Controllers
 {
-    
+    [ApiController]
+    [Route("api/[controller]")]
+    public class WebhooksController : ControllerBase
+    {
+        private readonly ILogger<WebhooksController> _logger;
+
+        public WebhooksController(ILogger<WebhooksController> logger)
+        {
+            _logger = logger;
+        }
+    }
 }
