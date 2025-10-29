@@ -1,6 +1,8 @@
-﻿namespace CrudCloudDb.Infrastructure.Repositories;
+﻿using CrudCloudDb.Application.Interfaces.Repositories;
 
-public class UserRepository
+namespace CrudCloudDb.Infrastructure.Repositories;
+
+public class UserRepository : IUserRepository
 {
     
 }

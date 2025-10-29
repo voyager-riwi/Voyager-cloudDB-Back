@@ -1,45 +1,69 @@
-﻿// CrudCloudDb.Infrastructure/Services/DockerService.cs
-
-using Docker.DotNet;
+﻿using Docker.DotNet;
 using Docker.DotNet.Models;
 using Microsoft.Extensions.Logging;
 using CrudCloudDb.Core.Entities;
 using CrudCloudDb.Core.Enums;
 using CrudCloudDb.Application.Services.Interfaces;
 using CrudCloudDb.Application.DTOs.Email;
+using Npgsql;
+using MySqlConnector;
+using MongoDB.Driver;
 
 namespace CrudCloudDb.Infrastructure.Services
 {
     /// <summary>
-    /// Servicio para gestión de contenedores Docker de bases de datos
+    /// Servicio para gestión de bases de datos en contenedores maestros compartidos
     /// </summary>
     public class DockerService : IDockerService
     {
         private readonly IDockerClient _dockerClient;
-        private readonly IPortManagerService _portManager;
+        private readonly IMasterContainerService _masterContainerService;
         private readonly ICredentialService _credentialService;
-        private readonly IEmailService _emailService;  // ⭐ CORREGIDO: Agregado campo
+        private readonly IEmailService _emailService;
         private readonly ILogger<DockerService> _logger;
 
         public DockerService(
-            IPortManagerService portManager,
+            IMasterContainerService masterContainerService,
             ICredentialService credentialService,
             IEmailService emailService,
             ILogger<DockerService> logger)
         {
-            _portManager = portManager;
+            _masterContainerService = masterContainerService;
             _credentialService = credentialService;
             _emailService = emailService;
             _logger = logger;
 
             // Conectar a Docker
-            _dockerClient = new DockerClientConfiguration(
-                    new Uri("npipe://./pipe/docker_engine"))  // ✅ Windows
-                .CreateClient();
+            if (OperatingSystem.IsWindows())
+            {
+                var endpoints = new[]
+                {
+                    new Uri("tcp://localhost:2375"),
+                    new Uri("npipe://./pipe/docker_engine"),
+                };
+
+                foreach (var endpoint in endpoints)
+                {
+                    try
+                    {
+                        var config = new DockerClientConfiguration(endpoint);
+                        var client = config.CreateClient();
+                        client.System.PingAsync().Wait(TimeSpan.FromSeconds(2));
+                        _dockerClient = client;
+                        break;
+                    }
+                    catch { }
+                }
+            }
+            else
+            {
+                _dockerClient = new DockerClientConfiguration(
+                    new Uri("unix:///var/run/docker.sock")).CreateClient();
+            }
         }
 
         /// <summary>
-        /// Crea un nuevo contenedor de base de datos
+        /// Crea una nueva base de datos en un contenedor maestro compartido
         /// </summary>
         public async Task<DatabaseInstance> CreateDatabaseContainerAsync(
             User user,
@@ -48,75 +72,50 @@ namespace CrudCloudDb.Infrastructure.Services
         {
             try
             {
-                _logger.LogInformation($"🚀 [{user.Email}] Creando contenedor {engine}: {databaseName}");
+                _logger.LogInformation($"🚀 [{user.Email}] Creating {engine} database: {databaseName}");
 
-                // 1. OBTENER PUERTO DISPONIBLE
-                var port = await _portManager.GetAvailablePortAsync(engine);
-                _logger.LogInformation($"📌 Puerto asignado: {port}");
+                // 1. OBTENER O CREAR CONTENEDOR MAESTRO
+                var masterContainer = await _masterContainerService.GetOrCreateMasterContainerAsync(engine);
+                _logger.LogInformation($"📦 Using master container: {masterContainer.ContainerId[..12]} on port {masterContainer.Port}");
 
-                // 2. GENERAR CREDENCIALES
+                // 2. GENERAR CREDENCIALES PARA EL USUARIO
                 var credentials = await _credentialService.GenerateCredentialsAsync();
-                _logger.LogInformation($"🔑 Usuario generado: {credentials.Username}");
+                _logger.LogInformation($"🔑 Generated credentials for user: {credentials.Username}");
 
-                // 3. CREAR CONFIGURACIÓN
-                var config = engine switch
-                {
-                    DatabaseEngine.PostgreSQL => CreatePostgreSQLConfig(databaseName, credentials, port),
-                    DatabaseEngine.MySQL => CreateMySQLConfig(databaseName, credentials, port),
-                    DatabaseEngine.MongoDB => CreateMongoDBConfig(databaseName, credentials, port),
-                    _ => throw new NotSupportedException($"Motor {engine} no soportado")
-                };
+                // 3. CREAR BASE DE DATOS DENTRO DEL CONTENEDOR MAESTRO
+                await CreateDatabaseInsideMasterAsync(
+                    masterContainer,
+                    databaseName,
+                    credentials,
+                    engine);
 
-                // 4. ASEGURAR IMAGEN
-                await EnsureImageExistsAsync(config.Image);
+                _logger.LogInformation($"✅ Database {databaseName} created inside master container");
 
-                // 5. CREAR CONTENEDOR
-                _logger.LogInformation($"📦 Creando contenedor Docker...");
-                var container = await _dockerClient.Containers.CreateContainerAsync(config);
-                var containerId = container.ID[..12];
-                _logger.LogInformation($"✅ Contenedor creado: {containerId}");
-
-                // 6. INICIAR CONTENEDOR
-                _logger.LogInformation($"▶️  Iniciando contenedor...");
-                await _dockerClient.Containers.StartContainerAsync(
-                    container.ID,
-                    new ContainerStartParameters());
-
-                // 7. ESPERAR HEALTHCHECK
-                _logger.LogInformation($"⏳ Esperando healthcheck...");
-                var isHealthy = await WaitForContainerHealthyAsync(container.ID, maxWaitSeconds: 90);
-
-                if (!isHealthy)
-                {
-                    _logger.LogError($"❌ Contenedor no se volvió healthy, eliminando...");
-                    await _dockerClient.Containers.StopContainerAsync(container.ID, new ContainerStopParameters());
-                    await _dockerClient.Containers.RemoveContainerAsync(container.ID, new ContainerRemoveParameters());
-                    throw new Exception($"Contenedor {containerId} no pasó healthcheck");
-                }
-
-                _logger.LogInformation($"✅ Contenedor {containerId} listo!");
-
-                // 8. CREAR INSTANCIA
+                // 4. CREAR INSTANCIA EN BD
                 var dbInstance = new DatabaseInstance
                 {
                     Id = Guid.NewGuid(),
                     UserId = user.Id,
                     Engine = engine,
                     Name = databaseName,
-                    ContainerId = container.ID,
-                    Port = port,
+                    MasterContainerId = masterContainer.ContainerId,
+                    Port = masterContainer.Port,
                     DatabaseName = databaseName,
                     Username = credentials.Username,
                     PasswordHash = credentials.PasswordHash,
                     Status = DatabaseStatus.Running,
-                    ConnectionString = BuildConnectionString(engine, port, databaseName, credentials),
+                    ConnectionString = BuildConnectionString(
+                        engine, 
+                        masterContainer.Port, 
+                        databaseName, 
+                        credentials),
                     CredentialsViewed = false,
                     CreatedAt = DateTime.UtcNow
                 };
 
-                _logger.LogInformation($"🎉 Base de datos {engine} creada exitosamente en puerto {port}");
+                _logger.LogInformation($"🎉 Database {engine}/{databaseName} ready on port {masterContainer.Port}");
 
-                // 9. ENVIAR EMAIL ⭐ CORREGIDO: Usar DTO
+                // 5. ENVIAR EMAIL
                 await _emailService.SendDatabaseCreatedEmailAsync(new DatabaseCreatedEmailDto
                 {
                     UserEmail = user.Email,
@@ -124,8 +123,8 @@ namespace CrudCloudDb.Infrastructure.Services
                     DatabaseName = databaseName,
                     Engine = engine.ToString(),
                     Username = credentials.Username,
-                    Password = credentials.Password,  // ⚠️ Solo aquí en texto plano
-                    Port = port,
+                    Password = credentials.Password,
+                    Port = masterContainer.Port,
                     ConnectionString = dbInstance.ConnectionString,
                     CreatedAt = DateTime.UtcNow
                 });
@@ -134,46 +133,51 @@ namespace CrudCloudDb.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"❌ Error creando contenedor {engine}");
+                _logger.LogError(ex, $"❌ Error creating database {engine}/{databaseName}");
                 throw;
             }
         }
 
         /// <summary>
-        /// Elimina un contenedor y envía email de notificación
+        /// Elimina una base de datos del contenedor maestro
         /// </summary>
         public async Task<bool> DeleteDatabaseAsync(DatabaseInstance dbInstance, User user)
         {
             try
             {
-                _logger.LogInformation($"🗑️  Eliminando base de datos {dbInstance.Name}");
+                _logger.LogInformation($"🗑️ Deleting database {dbInstance.Name}");
 
-                // 1. Detener contenedor
-                await StopContainerAsync(dbInstance.ContainerId);
-
-                // 2. Eliminar contenedor
-                var removed = await RemoveContainerAsync(dbInstance.ContainerId);
-
-                if (removed)
+                var masterContainer = await _masterContainerService.GetMasterContainerInfoAsync(dbInstance.Engine);
+                
+                if (masterContainer == null)
                 {
-                    // 3. Enviar email de confirmación
-                    await _emailService.SendDatabaseDeletedEmailAsync(new DatabaseDeletedEmailDto
-                    {
-                        UserEmail = user.Email,
-                        UserName = user.Email.Split('@')[0],
-                        DatabaseName = dbInstance.Name,
-                        Engine = dbInstance.Engine.ToString(),
-                        DeletedAt = DateTime.UtcNow
-                    });
-
-                    _logger.LogInformation($"✅ Base de datos {dbInstance.Name} eliminada exitosamente");
+                    _logger.LogWarning($"⚠️ Master container not found for {dbInstance.Engine}");
+                    return false;
                 }
 
-                return removed;
+                // Eliminar base de datos dentro del contenedor maestro
+                await DeleteDatabaseInsideMasterAsync(
+                    masterContainer,
+                    dbInstance.DatabaseName,
+                    dbInstance.Username,
+                    dbInstance.Engine);
+
+                // Enviar email de confirmación
+                await _emailService.SendDatabaseDeletedEmailAsync(new DatabaseDeletedEmailDto
+                {
+                    UserEmail = user.Email,
+                    UserName = user.Email.Split('@')[0],
+                    DatabaseName = dbInstance.Name,
+                    Engine = dbInstance.Engine.ToString(),
+                    DeletedAt = DateTime.UtcNow
+                });
+
+                _logger.LogInformation($"✅ Database {dbInstance.Name} deleted successfully");
+                return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"❌ Error eliminando base de datos {dbInstance.Name}");
+                _logger.LogError(ex, $"❌ Error deleting database {dbInstance.Name}");
                 throw;
             }
         }
@@ -187,38 +191,36 @@ namespace CrudCloudDb.Infrastructure.Services
         {
             try
             {
-                _logger.LogInformation($"🔑 Reseteando password para BD {dbInstance.Name}");
+                _logger.LogInformation($"🔑 Resetting password for database {dbInstance.Name}");
 
-                // 1. Generar nueva contraseña
+                var masterContainer = await _masterContainerService.GetMasterContainerInfoAsync(dbInstance.Engine);
+                
+                if (masterContainer == null)
+                    throw new Exception("Master container not found");
+
+                // Generar nueva contraseña
                 var newCredentials = await _credentialService.GenerateCredentialsAsync();
 
-                // 2. Ejecutar comando dentro del contenedor para cambiar password
-                var resetSuccess = await ExecutePasswordResetInContainerAsync(
-                    dbInstance.ContainerId,
-                    dbInstance.Engine,
+                // Cambiar password en el contenedor maestro
+                await ResetPasswordInsideMasterAsync(
+                    masterContainer,
                     dbInstance.Username,
-                    newCredentials.Password
-                );
+                    newCredentials.Password,
+                    dbInstance.Engine);
 
-                if (!resetSuccess)
-                {
-                    throw new Exception("Failed to reset password in container");
-                }
-
-                // 3. Construir nuevo connection string
+                // Construir nuevo connection string
                 var newConnectionString = BuildConnectionString(
                     dbInstance.Engine,
-                    dbInstance.Port,
+                    masterContainer.Port,
                     dbInstance.DatabaseName,
                     new CredentialResult
                     {
                         Username = dbInstance.Username,
                         Password = newCredentials.Password,
                         PasswordHash = newCredentials.PasswordHash
-                    }
-                );
+                    });
 
-                // 4. Enviar email con nueva contraseña
+                // Enviar email
                 await _emailService.SendPasswordResetEmailAsync(new PasswordResetEmailDto
                 {
                     UserEmail = user.Email,
@@ -231,7 +233,7 @@ namespace CrudCloudDb.Infrastructure.Services
                     ResetAt = DateTime.UtcNow
                 });
 
-                _logger.LogInformation($"✅ Password reseteado exitosamente para {dbInstance.Name}");
+                _logger.LogInformation($"✅ Password reset successfully for {dbInstance.Name}");
 
                 return new PasswordResetResult
                 {
@@ -243,104 +245,20 @@ namespace CrudCloudDb.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"❌ Error reseteando password");
+                _logger.LogError(ex, $"❌ Error resetting password");
                 throw;
             }
         }
 
-        /// <summary>
-        /// Rota las credenciales de una base de datos (cambio automático programado)
-        /// Similar a reset pero puede ser automático/programado
-        /// </summary>
-        public async Task<PasswordResetResult> RotateDatabaseCredentialsAsync(
-            DatabaseInstance dbInstance,
-            User user,
-            bool notifyUser = true)
+        public async Task<bool> IsContainerRunningAsync(string containerId)
         {
             try
             {
-                _logger.LogInformation($"🔄 Rotando credenciales para BD {dbInstance.Name}");
-
-                // 1. Generar nuevas credenciales
-                var newCredentials = await _credentialService.GenerateCredentialsAsync();
-
-                // 2. Ejecutar cambio de password en el contenedor
-                var resetSuccess = await ExecutePasswordResetInContainerAsync(
-                    dbInstance.ContainerId,
-                    dbInstance.Engine,
-                    dbInstance.Username,
-                    newCredentials.Password
-                );
-
-                if (!resetSuccess)
-                {
-                    throw new Exception("Failed to rotate credentials in container");
-                }
-
-                // 3. Construir nuevo connection string
-                var newConnectionString = BuildConnectionString(
-                    dbInstance.Engine,
-                    dbInstance.Port,
-                    dbInstance.DatabaseName,
-                    new CredentialResult
-                    {
-                        Username = dbInstance.Username,
-                        Password = newCredentials.Password,
-                        PasswordHash = newCredentials.PasswordHash
-                    }
-                );
-
-                // 4. Enviar email solo si se solicita (para rotaciones automáticas puede ser opcional)
-                if (notifyUser)
-                {
-                    await _emailService.SendPasswordResetEmailAsync(new PasswordResetEmailDto
-                    {
-                        UserEmail = user.Email,
-                        UserName = user.Email.Split('@')[0],
-                        DatabaseName = dbInstance.Name,
-                        Engine = dbInstance.Engine.ToString(),
-                        NewUsername = dbInstance.Username,
-                        NewPassword = newCredentials.Password,
-                        ConnectionString = newConnectionString,
-                        ResetAt = DateTime.UtcNow
-                    });
-                }
-
-                _logger.LogInformation($"✅ Credenciales rotadas exitosamente para {dbInstance.Name}");
-
-                return new PasswordResetResult
-                {
-                    Success = true,
-                    NewPassword = newCredentials.Password,
-                    NewPasswordHash = newCredentials.PasswordHash,
-                    NewConnectionString = newConnectionString
-                };
+                var inspect = await _dockerClient.Containers.InspectContainerAsync(containerId);
+                return inspect.State.Running;
             }
-            catch (Exception ex)
+            catch
             {
-                _logger.LogError(ex, $"❌ Error rotando credenciales");
-                throw;
-            }
-        }
-
-        // ============================================
-        // MÉTODOS DE GESTIÓN DE CONTENEDORES
-        // ============================================
-
-        public async Task<bool> StopContainerAsync(string containerId)
-        {
-            try
-            {
-                await _dockerClient.Containers.StopContainerAsync(
-                    containerId,
-                    new ContainerStopParameters { WaitBeforeKillSeconds = 10 });
-                
-                _logger.LogInformation($"🛑 Contenedor detenido: {containerId[..12]}");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error deteniendo contenedor");
                 return false;
             }
         }
@@ -352,54 +270,43 @@ namespace CrudCloudDb.Infrastructure.Services
                 await _dockerClient.Containers.StartContainerAsync(
                     containerId,
                     new ContainerStartParameters());
-
-                _logger.LogInformation($"▶️  Contenedor iniciado: {containerId[..12]}");
                 return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error iniciando contenedor");
+                _logger.LogError(ex, "Error starting container");
                 return false;
             }
         }
 
-        public async Task<bool> RemoveContainerAsync(string containerId)
+        public async Task<bool> StopContainerAsync(string containerId)
         {
             try
             {
-                await _dockerClient.Containers.RemoveContainerAsync(
+                await _dockerClient.Containers.StopContainerAsync(
                     containerId,
-                    new ContainerRemoveParameters { Force = true });
-                
-                _logger.LogInformation($"🗑️  Contenedor eliminado: {containerId[..12]}");
+                    new ContainerStopParameters { WaitBeforeKillSeconds = 10 });
                 return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error eliminando contenedor");
+                _logger.LogError(ex, "Error stopping container");
                 return false;
             }
         }
 
-        public async Task<bool> IsContainerRunningAsync(string containerId)
+        public Task<bool> RemoveContainerAsync(string containerId)
         {
-            try
-            {
-                var inspect = await _dockerClient.Containers.InspectContainerAsync(containerId);
-                return inspect.State.Running;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error verificando estado del contenedor");
-                return false;
-            }
+            // ⚠️ Ya no eliminamos contenedores (son compartidos)
+            _logger.LogWarning("⚠️ RemoveContainerAsync called but containers are shared - ignoring");
+            return Task.FromResult(true);
         }
 
         public async Task<string> GetContainerLogsAsync(string containerId, int lines = 100)
         {
             try
             {
-                #pragma warning disable CS0618 // Suprimir warning de método obsoleto
+                #pragma warning disable CS0618
                 var logStream = await _dockerClient.Containers.GetContainerLogsAsync(
                     containerId,
                     new ContainerLogsParameters
@@ -415,264 +322,368 @@ namespace CrudCloudDb.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error obteniendo logs");
+                _logger.LogError(ex, "Error getting logs");
                 return string.Empty;
             }
         }
+
         // ============================================
-        // MÉTODOS DE CONFIGURACIÓN POR MOTOR
+        // MÉTODOS PRIVADOS: Operaciones SQL
         // ============================================
 
-        private CreateContainerParameters CreatePostgreSQLConfig(
-            string dbName,
+        /// <summary>
+        /// Crea una base de datos y usuario dentro del contenedor maestro
+        /// </summary>
+        private async Task CreateDatabaseInsideMasterAsync(
+            MasterContainerInfo masterContainer,
+            string databaseName,
             CredentialResult credentials,
-            int port)
+            DatabaseEngine engine)
         {
-            var containerName = $"db_postgres_{dbName}_{Guid.NewGuid().ToString("N")[..8]}";
-
-            return new CreateContainerParameters
+            switch (engine)
             {
-                Image = "postgres:15-alpine",
-                Name = containerName,
-                Env = new List<string>
-                {
-                    $"POSTGRES_DB={dbName}",
-                    $"POSTGRES_USER={credentials.Username}",
-                    $"POSTGRES_PASSWORD={credentials.Password}"
-                },
-                HostConfig = new HostConfig
-                {
-                    PortBindings = new Dictionary<string, IList<PortBinding>>
-                    {
-                        {
-                            "5432/tcp",
-                            new List<PortBinding>
-                            {
-                                new PortBinding { HostPort = port.ToString() }
-                            }
-                        }
-                    },
-                    RestartPolicy = new RestartPolicy
-                    {
-                        Name = RestartPolicyKind.UnlessStopped
-                    }
-                },
-                Healthcheck = new HealthConfig
-                {
-                    Test = new[] { "CMD-SHELL", $"pg_isready -U {credentials.Username}" },
-                    Interval = TimeSpan.FromSeconds(10),  // ✅ TimeSpan directamente
-                    Timeout = TimeSpan.FromSeconds(5),    // ✅ Sin .Ticks
-                    Retries = 5,
-                    StartPeriod = TimeSpan.FromSeconds(30).Ticks
-                }
-            };
-        }
-
-        private CreateContainerParameters CreateMySQLConfig(
-            string dbName,
-            CredentialResult credentials,
-            int port)
-        {
-            var containerName = $"db_mysql_{dbName}_{Guid.NewGuid().ToString("N")[..8]}";
-
-            return new CreateContainerParameters
-            {
-                Image = "mysql:8.0",
-                Name = containerName,
-                Env = new List<string>
-                {
-                    $"MYSQL_DATABASE={dbName}",
-                    $"MYSQL_USER={credentials.Username}",
-                    $"MYSQL_PASSWORD={credentials.Password}",
-                    $"MYSQL_ROOT_PASSWORD={Guid.NewGuid()}"
-                },
-                HostConfig = new HostConfig
-                {
-                    PortBindings = new Dictionary<string, IList<PortBinding>>
-                    {
-                        {
-                            "3306/tcp",
-                            new List<PortBinding>
-                            {
-                                new PortBinding { HostPort = port.ToString() }
-                            }
-                        }
-                    },
-                    RestartPolicy = new RestartPolicy
-                    {
-                        Name = RestartPolicyKind.UnlessStopped
-                    }
-                },
-                Healthcheck = new HealthConfig
-                {
-                    Test = new[] { "CMD", "mysqladmin", "ping", "-h", "localhost" },
-                    Interval = TimeSpan.FromSeconds(10),  // ✅ TimeSpan directamente
-                    Timeout = TimeSpan.FromSeconds(5),    // ✅ Sin .Ticks
-                    Retries = 5,
-                    StartPeriod = TimeSpan.FromSeconds(30).Ticks
-                }
-            };
-        }
-
-        private CreateContainerParameters CreateMongoDBConfig(
-            string dbName,
-            CredentialResult credentials,
-            int port)
-        {
-            var containerName = $"db_mongo_{dbName}_{Guid.NewGuid().ToString("N")[..8]}";
-
-            return new CreateContainerParameters
-            {
-                Image = "mongo:7",
-                Name = containerName,
-                Env = new List<string>
-                {
-                    $"MONGO_INITDB_ROOT_USERNAME={credentials.Username}",
-                    $"MONGO_INITDB_ROOT_PASSWORD={credentials.Password}",
-                    $"MONGO_INITDB_DATABASE={dbName}"
-                },
-                HostConfig = new HostConfig
-                {
-                    PortBindings = new Dictionary<string, IList<PortBinding>>
-                    {
-                        {
-                            "27017/tcp",
-                            new List<PortBinding>
-                            {
-                                new PortBinding { HostPort = port.ToString() }
-                            }
-                        }
-                    },
-                    RestartPolicy = new RestartPolicy
-                    {
-                        Name = RestartPolicyKind.UnlessStopped
-                    }
-                },
-                Healthcheck = new HealthConfig
-                {
-                    Test = new[] { "CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--quiet" },
-                    Interval = TimeSpan.FromSeconds(10),  // ✅ TimeSpan directamente
-                    Timeout = TimeSpan.FromSeconds(5),    // ✅ Sin .Ticks
-                    Retries = 5,
-                    StartPeriod = TimeSpan.FromSeconds(30).Ticks
-                }
-            };
-        }
-
-        // ============================================
-        // MÉTODOS AUXILIARES PRIVADOS
-        // ============================================
-
-        private async Task EnsureImageExistsAsync(string image)
-        {
-            try
-            {
-                await _dockerClient.Images.InspectImageAsync(image);
-                _logger.LogInformation($"✅ Imagen {image} ya existe");
-            }
-            catch (DockerImageNotFoundException)
-            {
-                _logger.LogInformation($"📥 Descargando imagen {image}...");
-                await _dockerClient.Images.CreateImageAsync(
-                    new ImagesCreateParameters { FromImage = image },
-                    null,
-                    new Progress<JSONMessage>(m =>
-                    {
-                        if (!string.IsNullOrEmpty(m.Status))
-                            _logger.LogInformation($"   {m.Status}");
-                    }));
-                _logger.LogInformation($"✅ Imagen {image} descargada");
+                case DatabaseEngine.PostgreSQL:
+                    await CreatePostgreSQLDatabaseAsync(masterContainer, databaseName, credentials);
+                    break;
+                
+                case DatabaseEngine.MySQL:
+                    await CreateMySQLDatabaseAsync(masterContainer, databaseName, credentials);
+                    break;
+                
+                case DatabaseEngine.MongoDB:
+                    await CreateMongoDBDatabaseAsync(masterContainer, databaseName, credentials);
+                    break;
+                
+                default:
+                    throw new NotSupportedException($"Engine {engine} not supported");
             }
         }
 
-        private async Task<bool> WaitForContainerHealthyAsync(string containerId, int maxWaitSeconds = 60)
+        /// <summary>
+        /// Crea base de datos PostgreSQL con seguridad
+        /// </summary>
+        private async Task CreatePostgreSQLDatabaseAsync(
+            MasterContainerInfo master,
+            string dbName,
+            CredentialResult credentials)
         {
-            var startTime = DateTime.UtcNow;
+            var connString = $"Host={master.Host};Port={master.Port};Database=postgres;Username={master.AdminUsername};Password={master.AdminPassword}";
+            
+            await using var conn = new NpgsqlConnection(connString);
+            await conn.OpenAsync();
 
-            while ((DateTime.UtcNow - startTime).TotalSeconds < maxWaitSeconds)
+            // 1. Crear usuario
+            await using (var cmd = new NpgsqlCommand(
+                $"CREATE USER {credentials.Username} WITH PASSWORD '{credentials.Password}'", conn))
             {
-                var inspect = await _dockerClient.Containers.InspectContainerAsync(containerId);
-
-                var healthStatus = inspect.State.Health?.Status ?? "sin healthcheck";
-                var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
-
-                _logger.LogInformation($"   [{elapsed:F1}s] Estado: {healthStatus}");
-
-                if (healthStatus == "healthy" ||
-                    (inspect.State.Running && inspect.State.Health == null))
-                {
-                    return true;
-                }
-
-                if (!inspect.State.Running)
-                {
-                    _logger.LogError($"   Contenedor no está corriendo");
-                    return false;
-                }
-
-                await Task.Delay(2000);
+                await cmd.ExecuteNonQueryAsync();
             }
 
-            return false;
+            // 2. Crear base de datos (owner es el admin, NO el usuario)
+            await using (var cmd = new NpgsqlCommand(
+                $"CREATE DATABASE {dbName} OWNER {master.AdminUsername}", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // 3. Dar permisos de conexión y uso al usuario
+            await using (var cmd = new NpgsqlCommand(
+                $"GRANT CONNECT ON DATABASE {dbName} TO {credentials.Username}", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // 4. Conectar a la base de datos nueva
+            await conn.ChangeDatabaseAsync(dbName);
+
+            // 5. Dar permisos sobre el esquema public
+            await using (var cmd = new NpgsqlCommand(
+                $"GRANT ALL PRIVILEGES ON SCHEMA public TO {credentials.Username}", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // 6. Dar permisos sobre tablas futuras
+            await using (var cmd = new NpgsqlCommand(
+                $"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO {credentials.Username}", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            _logger.LogInformation($"✅ PostgreSQL database {dbName} created with secure permissions");
         }
 
-        private async Task<bool> ExecutePasswordResetInContainerAsync(
-            string containerId,
-            DatabaseEngine engine,
+        /// <summary>
+        /// Crea base de datos MySQL con seguridad
+        /// </summary>
+        private async Task CreateMySQLDatabaseAsync(
+            MasterContainerInfo master,
+            string dbName,
+            CredentialResult credentials)
+        {
+            var connString = $"Server={master.Host};Port={master.Port};User={master.AdminUsername};Password={master.AdminPassword}";
+            
+            await using var conn = new MySqlConnection(connString);
+            await conn.OpenAsync();
+
+            // 1. Crear base de datos
+            await using (var cmd = new MySqlCommand($"CREATE DATABASE {dbName}", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // 2. Crear usuario
+            await using (var cmd = new MySqlCommand(
+                $"CREATE USER '{credentials.Username}'@'%' IDENTIFIED BY '{credentials.Password}'", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // 3. Dar permisos SOLO sobre su base de datos
+            await using (var cmd = new MySqlCommand(
+                $"GRANT ALL PRIVILEGES ON {dbName}.* TO '{credentials.Username}'@'%'", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // 4. Aplicar cambios
+            await using (var cmd = new MySqlCommand("FLUSH PRIVILEGES", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            _logger.LogInformation($"✅ MySQL database {dbName} created with secure permissions");
+        }
+
+        /// <summary>
+        /// Crea base de datos MongoDB con seguridad
+        /// </summary>
+        private async Task CreateMongoDBDatabaseAsync(
+            MasterContainerInfo master,
+            string dbName,
+            CredentialResult credentials)
+        {
+            var connString = $"mongodb://{master.AdminUsername}:{master.AdminPassword}@{master.Host}:{master.Port}/admin";
+            
+            var client = new MongoClient(connString);
+            var adminDb = client.GetDatabase("admin");
+
+            // Crear usuario con acceso SOLO a su base de datos
+            var command = new MongoDB.Bson.BsonDocument
+            {
+                { "createUser", credentials.Username },
+                { "pwd", credentials.Password },
+                { "roles", new MongoDB.Bson.BsonArray
+                    {
+                        new MongoDB.Bson.BsonDocument
+                        {
+                            { "role", "dbOwner" },
+                            { "db", dbName }
+                        }
+                    }
+                }
+            };
+
+            await adminDb.RunCommandAsync<MongoDB.Bson.BsonDocument>(command);
+
+            _logger.LogInformation($"✅ MongoDB database {dbName} created with secure permissions");
+        }
+
+        /// <summary>
+        /// Elimina base de datos y usuario del contenedor maestro
+        /// </summary>
+        private async Task DeleteDatabaseInsideMasterAsync(
+            MasterContainerInfo master,
+            string dbName,
+            string username,
+            DatabaseEngine engine)
+        {
+            switch (engine)
+            {
+                case DatabaseEngine.PostgreSQL:
+                    await DeletePostgreSQLDatabaseAsync(master, dbName, username);
+                    break;
+                
+                case DatabaseEngine.MySQL:
+                    await DeleteMySQLDatabaseAsync(master, dbName, username);
+                    break;
+                
+                case DatabaseEngine.MongoDB:
+                    await DeleteMongoDBDatabaseAsync(master, dbName, username);
+                    break;
+            }
+        }
+
+        private async Task DeletePostgreSQLDatabaseAsync(
+            MasterContainerInfo master,
+            string dbName,
+            string username)
+        {
+            var connString = $"Host={master.Host};Port={master.Port};Database=postgres;Username={master.AdminUsername};Password={master.AdminPassword}";
+            
+            await using var conn = new NpgsqlConnection(connString);
+            await conn.OpenAsync();
+
+            // Terminar conexiones activas
+            await using (var cmd = new NpgsqlCommand(
+                $"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{dbName}'", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // Eliminar base de datos
+            await using (var cmd = new NpgsqlCommand($"DROP DATABASE IF EXISTS {dbName}", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // Eliminar usuario
+            await using (var cmd = new NpgsqlCommand($"DROP USER IF EXISTS {username}", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            _logger.LogInformation($"✅ PostgreSQL database {dbName} deleted");
+        }
+
+        private async Task DeleteMySQLDatabaseAsync(
+            MasterContainerInfo master,
+            string dbName,
+            string username)
+        {
+            var connString = $"Server={master.Host};Port={master.Port};User={master.AdminUsername};Password={master.AdminPassword}";
+            
+            await using var conn = new MySqlConnection(connString);
+            await conn.OpenAsync();
+
+            // Eliminar base de datos
+            await using (var cmd = new MySqlCommand($"DROP DATABASE IF EXISTS {dbName}", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // Eliminar usuario
+            await using (var cmd = new MySqlCommand($"DROP USER IF EXISTS '{username}'@'%'", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            await using (var cmd = new MySqlCommand("FLUSH PRIVILEGES", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            _logger.LogInformation($"✅ MySQL database {dbName} deleted");
+        }
+
+        private async Task DeleteMongoDBDatabaseAsync(
+            MasterContainerInfo master,
+            string dbName,
+            string username)
+        {
+            var connString = $"mongodb://{master.AdminUsername}:{master.AdminPassword}@{master.Host}:{master.Port}/admin";
+            
+            var client = new MongoClient(connString);
+            
+            // Eliminar base de datos
+            await client.DropDatabaseAsync(dbName);
+
+            // Eliminar usuario
+            var adminDb = client.GetDatabase("admin");
+            var command = new MongoDB.Bson.BsonDocument
+            {
+                { "dropUser", username }
+            };
+            await adminDb.RunCommandAsync<MongoDB.Bson.BsonDocument>(command);
+
+            _logger.LogInformation($"✅ MongoDB database {dbName} deleted");
+        }
+
+        /// <summary>
+        /// Resetea password de usuario en contenedor maestro
+        /// </summary>
+        private async Task ResetPasswordInsideMasterAsync(
+            MasterContainerInfo master,
+            string username,
+            string newPassword,
+            DatabaseEngine engine)
+        {
+            switch (engine)
+            {
+                case DatabaseEngine.PostgreSQL:
+                    await ResetPostgreSQLPasswordAsync(master, username, newPassword);
+                    break;
+                
+                case DatabaseEngine.MySQL:
+                    await ResetMySQLPasswordAsync(master, username, newPassword);
+                    break;
+                
+                case DatabaseEngine.MongoDB:
+                    await ResetMongoDBPasswordAsync(master, username, newPassword);
+                    break;
+            }
+        }
+
+        private async Task ResetPostgreSQLPasswordAsync(
+            MasterContainerInfo master,
             string username,
             string newPassword)
         {
-            try
+            var connString = $"Host={master.Host};Port={master.Port};Database=postgres;Username={master.AdminUsername};Password={master.AdminPassword}";
+            
+            await using var conn = new NpgsqlConnection(connString);
+            await conn.OpenAsync();
+
+            await using var cmd = new NpgsqlCommand(
+                $"ALTER USER {username} WITH PASSWORD '{newPassword}'", conn);
+            await cmd.ExecuteNonQueryAsync();
+
+            _logger.LogInformation($"✅ PostgreSQL password reset for {username}");
+        }
+
+        private async Task ResetMySQLPasswordAsync(
+            MasterContainerInfo master,
+            string username,
+            string newPassword)
+        {
+            var connString = $"Server={master.Host};Port={master.Port};User={master.AdminUsername};Password={master.AdminPassword}";
+            
+            await using var conn = new MySqlConnection(connString);
+            await conn.OpenAsync();
+
+            await using (var cmd = new MySqlCommand(
+                $"ALTER USER '{username}'@'%' IDENTIFIED BY '{newPassword}'", conn))
             {
-                string[] command = engine switch
-                {
-                    DatabaseEngine.PostgreSQL => new[]
-                    {
-                        "psql",
-                        "-U", username,
-                        "-c", $"ALTER USER {username} WITH PASSWORD '{newPassword}';"
-                    },
-
-                    DatabaseEngine.MySQL => new[]
-                    {
-                        "mysql",
-                        "-u", "root",
-                        "-e", $"ALTER USER '{username}'@'%' IDENTIFIED BY '{newPassword}'; FLUSH PRIVILEGES;"
-                    },
-
-                    DatabaseEngine.MongoDB => new[]
-                    {
-                        "mongosh",
-                        "--eval",
-                        $"db.updateUser('{username}', {{ pwd: '{newPassword}' }})"
-                    },
-
-                    _ => throw new NotSupportedException($"Engine {engine} not supported for password reset")
-                };
-
-                var execConfig = new ContainerExecCreateParameters
-                {
-                    AttachStdout = true,
-                    AttachStderr = true,
-                    Cmd = command
-                };
-
-                var execResponse = await _dockerClient.Exec.ExecCreateContainerAsync(
-                    containerId,
-                    execConfig
-                );
-
-                await _dockerClient.Exec.StartContainerExecAsync(execResponse.ID);
-
-                _logger.LogInformation($"✅ Password reset command executed in container");
-
-                return true;
+                await cmd.ExecuteNonQueryAsync();
             }
-            catch (Exception ex)
+
+            await using (var cmd = new MySqlCommand("FLUSH PRIVILEGES", conn))
             {
-                _logger.LogError(ex, "❌ Error executing password reset command");
-                return false;
+                await cmd.ExecuteNonQueryAsync();
             }
+
+            _logger.LogInformation($"✅ MySQL password reset for {username}");
+        }
+
+        private async Task ResetMongoDBPasswordAsync(
+            MasterContainerInfo master,
+            string username,
+            string newPassword)
+        {
+            var connString = $"mongodb://{master.AdminUsername}:{master.AdminPassword}@{master.Host}:{master.Port}/admin";
+            
+            var client = new MongoClient(connString);
+            var adminDb = client.GetDatabase("admin");
+
+            var command = new MongoDB.Bson.BsonDocument
+            {
+                { "updateUser", username },
+                { "pwd", newPassword }
+            };
+
+            await adminDb.RunCommandAsync<MongoDB.Bson.BsonDocument>(command);
+
+            _logger.LogInformation($"✅ MongoDB password reset for {username}");
         }
 
         private string BuildConnectionString(
@@ -690,7 +701,7 @@ namespace CrudCloudDb.Infrastructure.Services
                     $"Server=localhost;Port={port};Database={dbName};Uid={credentials.Username};Pwd={credentials.Password}",
 
                 DatabaseEngine.MongoDB =>
-                    $"mongodb://{credentials.Username}:{credentials.Password}@localhost:{port}/{dbName}?authSource=admin",
+                    $"mongodb://{credentials.Username}:{credentials.Password}@localhost:{port}/{dbName}?authSource={dbName}",
 
                 _ => throw new NotSupportedException()
             };
