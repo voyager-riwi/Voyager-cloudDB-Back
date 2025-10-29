@@ -2,10 +2,13 @@
 // 1️⃣ Using Statements
 // =======================
 using CrudCloudDb.Infrastructure.Data;
-using Microsoft.AspNetCore.Builder;
+using CrudCloudDb.Infrastructure.Services;
+using CrudCloudDb.Infrastructure.Repositories;
+using CrudCloudDb.Application.Services.Interfaces;
+using CrudCloudDb.Application.Services.Implementation;
+using CrudCloudDb.Application.Interfaces.Repositories;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using Microsoft.OpenApi.Models;
 
 // =======================
 // 2️⃣ Builder Initialization
@@ -47,37 +50,106 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
         .UseSnakeCaseNamingConvention());
 
 // =======================
-// 6️⃣ Service Configuration
+// 6️⃣ Repositories Registration
+// =======================
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IDatabaseInstanceRepository, DatabaseInstanceRepository>();
+
+// TODO: Agregar cuando Miguel los implemente:
+// builder.Services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();
+// builder.Services.AddScoped<IPlanRepository, PlanRepository>();
+
+// =======================
+// 7️⃣ Services Registration
+// =======================
+
+// Infrastructure Services (Docker, Email, etc.)
+builder.Services.AddScoped<IMasterContainerService, MasterContainerService>();
+builder.Services.AddScoped<IDockerService, DockerService>();
+builder.Services.AddScoped<IPortManagerService, PortManagerService>();
+builder.Services.AddScoped<ICredentialService, CredentialService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
+
+// Application Services (Business Logic)
+builder.Services.AddScoped<IDatabaseService, DatabaseService>();
+
+// TODO: Agregar cuando Miguel los implemente:
+// builder.Services.AddScoped<IAuthService, AuthService>();
+// builder.Services.AddScoped<IJwtService, JwtService>();
+// builder.Services.AddScoped<IPaymentService, PaymentService>();
+// builder.Services.AddScoped<IPlanService, PlanService>();
+// builder.Services.AddScoped<IUserService, UserService>();
+
+// =======================
+// 8️⃣ Controllers Configuration
+// =======================
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // Configuración para manejar enums como strings
+        options.JsonSerializerOptions.Converters.Add(
+            new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
+
+// =======================
+// 9️⃣ Swagger Configuration
 // =======================
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    c.SwaggerDoc("v1", new OpenApiInfo
     {
         Title = "CrudCloudDb API",
         Version = "v1",
-        Description = "API para gestión de bases de datos on-demand"
+        Description = "API para gestión de bases de datos on-demand",
+        Contact = new OpenApiContact
+        {
+            Name = "Voyager Team",
+            Email = "info@voyager.com"
+        }
     });
+
+    // TODO: Configuración JWT para Swagger (cuando Miguel termine Auth)
+    /*
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Description = "JWT Authorization header using the Bearer scheme. Example: \"Bearer {token}\"",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+    */
 });
 
-// TODO: Aquí irán los servicios de Miguel y tuyos cuando estén listos
-// builder.Services.AddScoped<IDockerService, DockerService>();
-// builder.Services.AddScoped<IAuthService, AuthService>();
-// etc...
-
 // =======================
-// 7️⃣ Build App
+// 🔟 Build App
 // =======================
 var app = builder.Build();
 
 // =======================
-// 8️⃣ Middleware Configuration
+// 1️⃣1️⃣ Middleware Configuration
 // =======================
 
 // CORS (siempre activo)
 app.UseCors("AllowAll");
 
-// Swagger (configuración flexible por ambiente)
+// Swagger (disponible en Development y Production)
 if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
 {
     app.UseSwagger();
@@ -85,6 +157,7 @@ if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
     {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "CrudCloudDb API v1");
         c.RoutePrefix = "swagger";
+        c.DocumentTitle = "CrudCloudDb API Documentation";
     });
 }
 
@@ -94,8 +167,12 @@ if (app.Environment.IsDevelopment() && !builder.Configuration.GetValue<bool>("Is
     app.UseHttpsRedirection();
 }
 
+// TODO: Descomentar cuando Miguel termine Auth
+// app.UseAuthentication();
+// app.UseAuthorization();
+
 // =======================
-// 9️⃣ Endpoint Mapping
+// 1️⃣2️⃣ Endpoint Mapping
 // =======================
 
 // Root endpoint
@@ -103,10 +180,12 @@ app.MapGet("/", () => Results.Ok(new
 {
     message = "CrudCloudDb API is running! 🚀",
     environment = app.Environment.EnvironmentName,
-    timestamp = DateTime.UtcNow
+    timestamp = DateTime.UtcNow,
+    version = "1.0.0"
 }))
     .WithName("RootEndpoint")
-    .WithOpenApi();
+    .WithOpenApi()
+    .WithTags("Health");
 
 // Health check endpoint
 app.MapGet("/health", () => Results.Ok(new
@@ -114,15 +193,21 @@ app.MapGet("/health", () => Results.Ok(new
     status = "healthy",
     timestamp = DateTime.UtcNow,
     environment = app.Environment.EnvironmentName,
-    version = "1.0.0"
+    version = "1.0.0",
+    services = new
+    {
+        database = "connected",
+        docker = "available"
+    }
 }))
     .WithName("HealthCheck")
-    .WithOpenApi();
+    .WithOpenApi()
+    .WithTags("Health");
 
-// TODO: Aquí irán los controllers cuando los agreguen
-// app.MapControllers();
+// Mapear controllers
+app.MapControllers();
 
 // =======================
-// 🔟 Run App
+// 1️⃣3️⃣ Run App
 // =======================
 app.Run();
