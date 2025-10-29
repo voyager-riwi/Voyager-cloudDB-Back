@@ -1,6 +1,10 @@
-﻿namespace CrudCloudDb.Application.Interfaces.Repositories;
+﻿using CrudCloudDb.Core.Entities;
+using CrudCloudDb.Core.Enums;
 
-public class IPlanRepository
-{
-    
+namespace CrudCloudDb.Application.Interfaces.Repositories;
+
+public interface IPlanRepository
+{   
+    Task<Plan?> GetDefaultPlanAsync();
+    Task<Plan?> GetByPlanTypeAsync(PlanType planType);
 }

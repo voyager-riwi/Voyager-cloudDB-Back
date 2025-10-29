@@ -1,6 +1,13 @@
-﻿namespace CrudCloudDb.Application.Services.Implementation;
+﻿using CrudCloudDb.Application.Services.Interfaces;
 
-public class UserService
+namespace CrudCloudDb.Application.Services.Implementation;
+
+public class UserService : IUserService
 {
+
+    public UserService()
+    {
+        
+    }
     
 }
