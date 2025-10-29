@@ -1,16 +1,37 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
-namespace CrudCloudDb.API.Controllers
+namespace CrudCloudDb.API.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+[Authorize]
+public class UsersController : ControllerBase
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    public class UsersController : ControllerBase
+    private readonly ILogger<UsersController> _logger;
+    public UsersController(ILogger<UsersController> logger)
     {
-        private readonly ILogger<UsersController> _logger;
+        _logger = logger;
+    }
+    
+    [HttpGet("profile")]
+    public IActionResult GetUserProfile()
+    {
+        var userId = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
+        var userEmail = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value;
 
-        public UsersController(ILogger<UsersController> logger)
+        if (userId == null)
         {
-            _logger = logger;
+            return Unauthorized();
         }
+
+        var profileData = new
+        {
+            Message = "Este es un endpoint protegido, funciona hpp",
+            UserId = userId,
+            Email = userEmail
+        };
+        return Ok(profileData);
     }
 }

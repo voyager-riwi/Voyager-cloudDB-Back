@@ -5,7 +5,17 @@ using CrudCloudDb.Infrastructure.Data;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting; 
+using Microsoft.OpenApi.Models;
+
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using CrudCloudDb.Application.Interfaces.Repositories;
+using CrudCloudDb.Application.Services.Implementation;
+using CrudCloudDb.Application.Services.Interfaces;
+using CrudCloudDb.Infrastructure.Repositories;
+
 
 // =======================
 // 2️⃣ Builder Initialization
@@ -15,11 +25,10 @@ var builder = WebApplication.CreateBuilder(args);
 // =======================
 // 3️⃣ Port Configuration (Flexible)
 // =======================
-// Lee el puerto de configuración o usa default
+
 var port = builder.Configuration.GetValue<string>("AppSettings:Port") ?? "8080";
 var host = builder.Configuration.GetValue<string>("AppSettings:Host") ?? "localhost";
 
-// Solo configura puerto en producción (Docker)
 if (builder.Environment.IsProduction())
 {
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
@@ -28,6 +37,7 @@ if (builder.Environment.IsProduction())
 // =======================
 // 4️⃣ CORS Configuration
 // =======================
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -47,24 +57,87 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
         .UseSnakeCaseNamingConvention());
 
 // =======================
+//  JWT configuration 
+// =======================
+
+
+builder.Services.AddAuthentication(options =>
+    {
+        // Le decimos que se encargara de validar credenciales
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    //damos las instrucciones
+    .AddJwtBearer(options =>
+    {
+        var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+        var secret = jwtSettings["Secret"];
+        if(secret == null) throw new ArgumentNullException(nameof(secret), "JWT Secret not configured.");
+
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true, //revisa lo mas importante, osea la clave
+            ValidIssuer = jwtSettings["Issuer"],
+            ValidAudience = jwtSettings["Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret))
+        };
+    });
+
+
+
+
+// =======================
 // 6️⃣ Service Configuration
 // =======================
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
+builder.Services.AddSwaggerGen(options =>
 {
-    c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    // Configuración básica de Swagger
+    options.SwaggerDoc("v1", new OpenApiInfo { Title = "CrudCloudDb.API", Version = "v1" });
+
+    // Pantallita para definir el esquema, para introducir el token
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Title = "CrudCloudDb API",
-        Version = "v1",
-        Description = "API para gestión de bases de datos on-demand"
+        In = ParameterLocation.Header,
+        Description = "Por favor, introduce 'Bearer' seguido de un espacio y el token JWT",
+        Name = "Authorization",
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+
+    // Le decimos a Swagger que aplique este requisito de seguridad a las operaciones
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            new string[] {}
+        }
     });
 });
 
-// TODO: Aquí irán los servicios de Miguel y tuyos cuando estén listos
-// builder.Services.AddScoped<IDockerService, DockerService>();
-// builder.Services.AddScoped<IAuthService, AuthService>();
-// etc...
 
+builder.Services.AddControllers();
+
+// TODO: Aquí irán los servicios
+// builder.Services.AddScoped<IDockerService, DockerService>();
+// Registro de repositorios
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IPlanRepository, PlanRepository>();
+//builder.Services.AddScoped<IDatabaseInstanceRepository, DatabaseInstanceRepository>();
+
+// Registro de servicios
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IUserService, UserService>();
 // =======================
 // 7️⃣ Build App
 // =======================
@@ -73,8 +146,9 @@ var app = builder.Build();
 // =======================
 // 8️⃣ Middleware Configuration
 // =======================
+// ¡OJO! El orden del middleware es MUY importante.
 
-// CORS (siempre activo)
+
 app.UseCors("AllowAll");
 
 // Swagger (configuración flexible por ambiente)
@@ -88,17 +162,22 @@ if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
     });
 }
 
-// HTTPS Redirect (solo en desarrollo local, no en Docker)
+// HTTPS Redirect (flexible)
 if (app.Environment.IsDevelopment() && !builder.Configuration.GetValue<bool>("IsDocker"))
 {
     app.UseHttpsRedirection();
 }
 
+// --- AÑADIDOS DESDE EL ARCHIVO 2 ---
+// Deben ir DESPUÉS de CORS y ANTES de MapControllers
+app.UseAuthentication(); 
+app.UseAuthorization();
+
 // =======================
 // 9️⃣ Endpoint Mapping
 // =======================
 
-// Root endpoint
+
 app.MapGet("/", () => Results.Ok(new
 {
     message = "CrudCloudDb API is running! 🚀",
@@ -108,7 +187,6 @@ app.MapGet("/", () => Results.Ok(new
     .WithName("RootEndpoint")
     .WithOpenApi();
 
-// Health check endpoint
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "healthy",
@@ -119,8 +197,8 @@ app.MapGet("/health", () => Results.Ok(new
     .WithName("HealthCheck")
     .WithOpenApi();
 
-// TODO: Aquí irán los controllers cuando los agreguen
-// app.MapControllers();
+
+app.MapControllers();
 
 // =======================
 // 🔟 Run App

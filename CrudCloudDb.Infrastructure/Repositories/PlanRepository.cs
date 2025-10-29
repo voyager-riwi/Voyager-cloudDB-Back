@@ -17,21 +17,24 @@ namespace CrudCloudDb.Infrastructure.Repositories
             _context = context;
         }
 
+        public async Task<Plan?> GetByPlanTypeAsync(PlanType planType)
+        {
+            return await _context.Plans.FirstOrDefaultAsync(p => p.PlanType == planType);
+        }
+
+        public async Task<Plan?> GetDefaultPlanAsync()
+        {
+            return await GetByPlanTypeAsync(PlanType.Free);
+        }
         public async Task<Plan?> GetByIdAsync(Guid id)
         {
             return await _context.Plans.FindAsync(id);
         }
-
+        
         public async Task<IEnumerable<Plan>> GetAllAsync()
         {
             return await _context.Plans.AsNoTracking().ToListAsync();
         }
-
-        public async Task<Plan?> GetByTypeAsync(PlanType planType)
-        {
-            return await _context.Plans
-                .AsNoTracking()
-                .FirstOrDefaultAsync(p => p.PlanType == planType);
-        }
+        
     }
 }
