@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,6 +9,12 @@ namespace CrudCloudDb.API.Controllers;
 [Authorize]
 public class UsersController : ControllerBase
 {
+    private readonly ILogger<UsersController> _logger;
+    public UsersController(ILogger<UsersController> logger)
+    {
+        _logger = logger;
+    }
+    
     [HttpGet("profile")]
     public IActionResult GetUserProfile()
     {

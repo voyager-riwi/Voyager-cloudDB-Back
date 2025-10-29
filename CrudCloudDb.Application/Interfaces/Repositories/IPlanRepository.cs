@@ -7,4 +7,6 @@ public interface IPlanRepository
 {   
     Task<Plan?> GetDefaultPlanAsync();
     Task<Plan?> GetByPlanTypeAsync(PlanType planType);
+    Task<Plan?> GetByIdAsync(Guid id);
+    Task<IEnumerable<Plan>> GetAllAsync();
 }

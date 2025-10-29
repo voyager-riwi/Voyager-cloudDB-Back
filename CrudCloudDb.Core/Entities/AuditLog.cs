@@ -6,7 +6,7 @@ namespace CrudCloudDb.Core.Entities
     {
         public long Id { get; set; }
         
-        public Guid? UserId { get; set; } // Can be null for system events
+        public Guid? UserId { get; set; } // Puede ser nulo para eventos del sistema
         
         [Required]
         [MaxLength(255)]
@@ -17,7 +17,7 @@ namespace CrudCloudDb.Core.Entities
         
         public string? EntityId { get; set; }
         
-        public string? Changes { get; set; } // JSON formatted string of changes
+        public string? Changes { get; set; } // Un string en formato JSON con los cambios
         
         public DateTime Timestamp { get; set; } = DateTime.UtcNow;
     }

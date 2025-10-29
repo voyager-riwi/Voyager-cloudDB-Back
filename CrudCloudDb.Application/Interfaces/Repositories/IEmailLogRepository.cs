@@ -1,6 +1,9 @@
-﻿namespace CrudCloudDb.Application.Interfaces.Repositories;
+﻿using CrudCloudDb.Core.Entities;
 
-public class IEmailLogRepository
+namespace CrudCloudDb.Application.Interfaces.Repositories
 {
-    
+    public interface IEmailLogRepository
+    {
+        Task AddAsync(EmailLog log);
+    }
 }

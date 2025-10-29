@@ -3,6 +3,8 @@ using CrudCloudDb.Core.Entities;
 using CrudCloudDb.Core.Enums;
 using CrudCloudDb.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace CrudCloudDb.Infrastructure.Repositories
 {
@@ -24,5 +26,15 @@ namespace CrudCloudDb.Infrastructure.Repositories
         {
             return await GetByPlanTypeAsync(PlanType.Free);
         }
+        public async Task<Plan?> GetByIdAsync(Guid id)
+        {
+            return await _context.Plans.FindAsync(id);
+        }
+        
+        public async Task<IEnumerable<Plan>> GetAllAsync()
+        {
+            return await _context.Plans.AsNoTracking().ToListAsync();
+        }
+        
     }
 }

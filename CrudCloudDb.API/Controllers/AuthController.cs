@@ -1,4 +1,4 @@
-﻿using CrudCloudDb.Application.DTOs.Auth;
+using CrudCloudDb.Application.DTOs.Auth;
 using CrudCloudDb.Application.Services.Interfaces;
 using CrudCloudDb.Core.Entities;
 using Microsoft.AspNetCore.Mvc;
@@ -10,9 +10,11 @@ namespace CrudCloudDb.API.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
-    public AuthController(IAuthService authService)
+    private readonly ILogger<AuthController> _logger;
+    public AuthController(IAuthService authService, ILogger<AuthController> logger)
     {
         _authService = authService;
+        _logger = logger;
     }
 
     [HttpPost("register")]
