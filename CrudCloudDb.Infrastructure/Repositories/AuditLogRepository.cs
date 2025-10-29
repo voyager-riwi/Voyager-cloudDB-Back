@@ -28,8 +28,6 @@ namespace CrudCloudDb.Infrastructure.Repositories
             catch (DbUpdateException ex)
             {
                 _logger.LogError(ex, "Error al guardar el log de auditoría en la base de datos.");
-                // Dependiendo de la política de la aplicación, podrías decidir si relanzar la excepción
-                // o simplemente registrarla y continuar. Por ahora, solo la registramos.
             }
         }
     }

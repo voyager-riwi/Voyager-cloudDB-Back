@@ -29,12 +29,12 @@ namespace CrudCloudDb.Infrastructure.Services
             await _semaphore.WaitAsync();
             try
             {
-                _logger.LogInformation($"🔍 [{engine}] Buscando puerto disponible...");
+                _logger.LogInformation($" [{engine}] Buscando puerto disponible...");
 
                 var usedPorts = await GetUsedPortsAsync();
                 var usedPortsSet = new HashSet<int>(usedPorts);
 
-                _logger.LogInformation($"   Puertos en uso: {string.Join(", ", usedPorts.Take(10))}...");
+                _logger.LogInformation($"  Puertos en uso: {string.Join(", ", usedPorts.Take(10))}...");
 
                 for (int port = BASE_PORT_START; port <= BASE_PORT_END; port++)
                 {
@@ -43,7 +43,7 @@ namespace CrudCloudDb.Infrastructure.Services
 
                     if (await IsPortAvailableAsync(port))
                     {
-                        _logger.LogInformation($"✅ [{engine}] Puerto asignado: {port}");
+                        _logger.LogInformation($" [{engine}] Puerto asignado: {port}");
                         return port;
                     }
                 }
@@ -74,7 +74,7 @@ namespace CrudCloudDb.Infrastructure.Services
 
         public async Task ReleasePortAsync(int port)
         {
-            _logger.LogInformation($"🔓 Puerto liberado: {port}");
+            _logger.LogInformation($" Puerto liberado: {port}");
             await Task.CompletedTask;
         }
 

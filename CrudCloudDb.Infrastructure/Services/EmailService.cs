@@ -40,7 +40,7 @@ namespace CrudCloudDb.Infrastructure.Services
 
         public async Task SendDatabaseCreatedEmailAsync(DatabaseCreatedEmailDto dto)
         {
-            var subject = $"✅ Database Created: {dto.DatabaseName}";
+            var subject = $" Database Created: {dto.DatabaseName}";
             
             var body = $@"
 <!DOCTYPE html>
@@ -62,7 +62,7 @@ namespace CrudCloudDb.Infrastructure.Services
 <body>
     <div class='container'>
         <div class='header'>
-            <h1>🎉 Database Created Successfully!</h1>
+            <h1> Database Created Successfully!</h1>
         </div>
         <div class='content'>
             <p>Hi {dto.UserName},</p>
@@ -97,7 +97,7 @@ namespace CrudCloudDb.Infrastructure.Services
             </div>
 
             <div class='warning'>
-                <strong>⚠️ IMPORTANT:</strong> This is the only time you will see your password. Please save it in a secure location.
+                <strong> IMPORTANT:</strong> This is the only time you will see your password. Please save it in a secure location.
                 If you lose it, you can reset it from your dashboard.
             </div>
 
@@ -117,7 +117,7 @@ namespace CrudCloudDb.Infrastructure.Services
 
         public async Task SendDatabaseDeletedEmailAsync(DatabaseDeletedEmailDto dto)
         {
-            var subject = $"🗑️ Database Deleted: {dto.DatabaseName}";
+            var subject = $" Database Deleted: {dto.DatabaseName}";
             
             var body = $@"
 <!DOCTYPE html>
@@ -135,7 +135,7 @@ namespace CrudCloudDb.Infrastructure.Services
 <body>
     <div class='container'>
         <div class='header'>
-            <h1>🗑️ Database Deleted</h1>
+            <h1> Database Deleted</h1>
         </div>
         <div class='content'>
             <p>Hi {dto.UserName},</p>
@@ -148,7 +148,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 <p><strong>Deleted At:</strong> {dto.DeletedAt:yyyy-MM-dd HH:mm:ss} UTC</p>
             </div>
 
-            <p>⚠️ All data associated with this database has been permanently removed and cannot be recovered.</p>
+            <p> All data associated with this database has been permanently removed and cannot be recovered.</p>
 
             <div class='footer'>
                 <p>This is an automated message from CrudCloudDb Platform</p>
@@ -164,7 +164,7 @@ namespace CrudCloudDb.Infrastructure.Services
 
         public async Task SendPasswordResetEmailAsync(PasswordResetEmailDto dto)
         {
-            var subject = $"🔑 Password Reset: {dto.DatabaseName}";
+            var subject = $" Password Reset: {dto.DatabaseName}";
             
             var body = $@"
 <!DOCTYPE html>
@@ -186,7 +186,7 @@ namespace CrudCloudDb.Infrastructure.Services
 <body>
     <div class='container'>
         <div class='header'>
-            <h1>🔑 Password Reset Successful</h1>
+            <h1> Password Reset Successful</h1>
         </div>
         <div class='content'>
             <p>Hi {dto.UserName},</p>
@@ -213,7 +213,7 @@ namespace CrudCloudDb.Infrastructure.Services
             </div>
 
             <div class='warning'>
-                <strong>⚠️ IMPORTANT:</strong> This is the only time you will see your new password. Please save it in a secure location.
+                <strong> IMPORTANT:</strong> This is the only time you will see your new password. Please save it in a secure location.
                 Your old password is no longer valid.
             </div>
 
@@ -233,7 +233,7 @@ namespace CrudCloudDb.Infrastructure.Services
 
         public async Task SendWelcomeEmailAsync(string email, string userName)
         {
-            var subject = "Welcome to CrudCloudDb! 🎉";
+            var subject = "Welcome to CrudCloudDb! ";
             
             var body = $@"
 <!DOCTYPE html>
@@ -250,16 +250,16 @@ namespace CrudCloudDb.Infrastructure.Services
 <body>
     <div class='container'>
         <div class='header'>
-            <h1>🎉 Welcome to CrudCloudDb!</h1>
+            <h1> Welcome to CrudCloudDb!</h1>
         </div>
         <div class='content'>
             <p>Hi {userName},</p>
             <p>Thank you for joining CrudCloudDb! We're excited to have you on board.</p>
             <p>With CrudCloudDb, you can easily create and manage databases on demand:</p>
             <ul>
-                <li>✅ PostgreSQL</li>
-                <li>✅ MySQL</li>
-                <li>✅ MongoDB</li>
+                <li> PostgreSQL</li>
+                <li> MySQL</li>
+                <li> MongoDB</li>
             </ul>
             <p>Get started by creating your first database from your dashboard!</p>
             <div class='footer'>
@@ -303,13 +303,13 @@ namespace CrudCloudDb.Infrastructure.Services
                 await smtpClient.SendMailAsync(mailMessage);
 
                 log.IsSent = true;
-                _logger.LogInformation("✅ Email sent successfully to {To}", to);
+                _logger.LogInformation(" Email sent successfully to {To}", to);
             }
             catch (Exception ex)
             {
                 log.IsSent = false;
                 log.ErrorMessage = ex.Message;
-                _logger.LogError(ex, "❌ Failed to send email to {To}", to);
+                _logger.LogError(ex, " Failed to send email to {To}", to);
             }
             finally
             {

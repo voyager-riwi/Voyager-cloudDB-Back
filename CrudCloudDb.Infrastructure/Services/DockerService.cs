@@ -1,6 +1,4 @@
-﻿// CrudCloudDb.Infrastructure/Services/DockerService.cs
-
-using Docker.DotNet;
+﻿using Docker.DotNet;
 using Docker.DotNet.Models;
 using Microsoft.Extensions.Logging;
 using CrudCloudDb.Core.Entities;
@@ -10,15 +8,12 @@ using CrudCloudDb.Application.DTOs.Email;
 
 namespace CrudCloudDb.Infrastructure.Services
 {
-    /// <summary>
-    /// Servicio para gestión de contenedores Docker de bases de datos
-    /// </summary>
     public class DockerService : IDockerService
     {
         private readonly IDockerClient _dockerClient;
         private readonly IPortManagerService _portManager;
         private readonly ICredentialService _credentialService;
-        private readonly IEmailService _emailService;  // ⭐ CORREGIDO: Agregado campo
+        private readonly IEmailService _emailService; 
         private readonly ILogger<DockerService> _logger;
 
         public DockerService(
@@ -31,17 +26,11 @@ namespace CrudCloudDb.Infrastructure.Services
             _credentialService = credentialService;
             _emailService = emailService;
             _logger = logger;
-
-            // Conectar a Docker
             _dockerClient = new DockerClientConfiguration(
-                new Uri("unix:///var/run/docker.sock"))  // Linux
-                // new Uri("npipe://./pipe/docker_engine"))  // Windows
+                new Uri("unix:///var/run/docker.sock"))  
                 .CreateClient();
         }
-
-        /// <summary>
-        /// Crea un nuevo contenedor de base de datos
-        /// </summary>
+          
         public async Task<DatabaseInstance> CreateDatabaseContainerAsync(
             User user,
             DatabaseEngine engine,
@@ -49,17 +38,14 @@ namespace CrudCloudDb.Infrastructure.Services
         {
             try
             {
-                _logger.LogInformation($"🚀 [{user.Email}] Creando contenedor {engine}: {databaseName}");
-
-                // 1. OBTENER PUERTO DISPONIBLE
+                _logger.LogInformation($" [{user.Email}] Creando contenedor {engine}: {databaseName}");
+                
                 var port = await _portManager.GetAvailablePortAsync(engine);
-                _logger.LogInformation($"📌 Puerto asignado: {port}");
-
-                // 2. GENERAR CREDENCIALES
+                _logger.LogInformation($" Puerto asignado: {port}");
+                
                 var credentials = await _credentialService.GenerateCredentialsAsync();
-                _logger.LogInformation($"🔑 Usuario generado: {credentials.Username}");
-
-                // 3. CREAR CONFIGURACIÓN
+                _logger.LogInformation($" Usuario generado: {credentials.Username}");
+                
                 var config = engine switch
                 {
                     DatabaseEngine.PostgreSQL => CreatePostgreSQLConfig(databaseName, credentials, port),
@@ -68,36 +54,31 @@ namespace CrudCloudDb.Infrastructure.Services
                     _ => throw new NotSupportedException($"Motor {engine} no soportado")
                 };
 
-                // 4. ASEGURAR IMAGEN
                 await EnsureImageExistsAsync(config.Image);
-
-                // 5. CREAR CONTENEDOR
-                _logger.LogInformation($"📦 Creando contenedor Docker...");
+                
+                _logger.LogInformation($" Creando contenedor Docker...");
                 var container = await _dockerClient.Containers.CreateContainerAsync(config);
                 var containerId = container.ID[..12];
-                _logger.LogInformation($"✅ Contenedor creado: {containerId}");
+                _logger.LogInformation($" Contenedor creado: {containerId}");
 
-                // 6. INICIAR CONTENEDOR
-                _logger.LogInformation($"▶️  Iniciando contenedor...");
+                _logger.LogInformation($"▶  Iniciando contenedor...");
                 await _dockerClient.Containers.StartContainerAsync(
                     container.ID,
                     new ContainerStartParameters());
-
-                // 7. ESPERAR HEALTHCHECK
-                _logger.LogInformation($"⏳ Esperando healthcheck...");
+                
+                _logger.LogInformation($" Esperando healthcheck...");
                 var isHealthy = await WaitForContainerHealthyAsync(container.ID, maxWaitSeconds: 90);
 
                 if (!isHealthy)
                 {
-                    _logger.LogError($"❌ Contenedor no se volvió healthy, eliminando...");
+                    _logger.LogError($" Contenedor no se volvió healthy, eliminando...");
                     await _dockerClient.Containers.StopContainerAsync(container.ID, new ContainerStopParameters());
                     await _dockerClient.Containers.RemoveContainerAsync(container.ID, new ContainerRemoveParameters());
                     throw new Exception($"Contenedor {containerId} no pasó healthcheck");
                 }
 
-                _logger.LogInformation($"✅ Contenedor {containerId} listo!");
-
-                // 8. CREAR INSTANCIA
+                _logger.LogInformation($" Contenedor {containerId} listo!");
+                
                 var dbInstance = new DatabaseInstance
                 {
                     Id = Guid.NewGuid(),
@@ -115,9 +96,8 @@ namespace CrudCloudDb.Infrastructure.Services
                     CreatedAt = DateTime.UtcNow
                 };
 
-                _logger.LogInformation($"🎉 Base de datos {engine} creada exitosamente en puerto {port}");
-
-                // 9. ENVIAR EMAIL ⭐ CORREGIDO: Usar DTO
+                _logger.LogInformation($" Base de datos {engine} creada exitosamente en puerto {port}");
+                
                 await _emailService.SendDatabaseCreatedEmailAsync(new DatabaseCreatedEmailDto
                 {
                     UserEmail = user.Email,
@@ -125,7 +105,7 @@ namespace CrudCloudDb.Infrastructure.Services
                     DatabaseName = databaseName,
                     Engine = engine.ToString(),
                     Username = credentials.Username,
-                    Password = credentials.Password,  // ⚠️ Solo aquí en texto plano
+                    Password = credentials.Password,  
                     Port = port,
                     ConnectionString = dbInstance.ConnectionString,
                     CreatedAt = DateTime.UtcNow
@@ -135,29 +115,23 @@ namespace CrudCloudDb.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"❌ Error creando contenedor {engine}");
+                _logger.LogError(ex, $" Error creando contenedor {engine}");
                 throw;
             }
         }
 
-        /// <summary>
-        /// Elimina un contenedor y envía email de notificación
-        /// </summary>
         public async Task<bool> DeleteDatabaseAsync(DatabaseInstance dbInstance, User user)
         {
             try
             {
-                _logger.LogInformation($"🗑️  Eliminando base de datos {dbInstance.Name}");
-
-                // 1. Detener contenedor
+                _logger.LogInformation($"  Eliminando base de datos {dbInstance.Name}");
+                
                 await StopContainerAsync(dbInstance.ContainerId);
-
-                // 2. Eliminar contenedor
+                
                 var removed = await RemoveContainerAsync(dbInstance.ContainerId);
 
                 if (removed)
                 {
-                    // 3. Enviar email de confirmación
                     await _emailService.SendDatabaseDeletedEmailAsync(new DatabaseDeletedEmailDto
                     {
                         UserEmail = user.Email,
@@ -167,33 +141,28 @@ namespace CrudCloudDb.Infrastructure.Services
                         DeletedAt = DateTime.UtcNow
                     });
 
-                    _logger.LogInformation($"✅ Base de datos {dbInstance.Name} eliminada exitosamente");
+                    _logger.LogInformation($" Base de datos {dbInstance.Name} eliminada exitosamente");
                 }
 
                 return removed;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"❌ Error eliminando base de datos {dbInstance.Name}");
+                _logger.LogError(ex, $" Error eliminando base de datos {dbInstance.Name}");
                 throw;
             }
         }
 
-        /// <summary>
-        /// Resetea la contraseña de una base de datos
-        /// </summary>
         public async Task<PasswordResetResult> ResetDatabasePasswordAsync(
             DatabaseInstance dbInstance,
             User user)
         {
             try
             {
-                _logger.LogInformation($"🔑 Reseteando password para BD {dbInstance.Name}");
-
-                // 1. Generar nueva contraseña
+                _logger.LogInformation($" Reseteando password para BD {dbInstance.Name}");
+                
                 var newCredentials = await _credentialService.GenerateCredentialsAsync();
-
-                // 2. Ejecutar comando dentro del contenedor para cambiar password
+                
                 var resetSuccess = await ExecutePasswordResetInContainerAsync(
                     dbInstance.ContainerId,
                     dbInstance.Engine,
@@ -205,8 +174,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 {
                     throw new Exception("Failed to reset password in container");
                 }
-
-                // 3. Construir nuevo connection string
+                
                 var newConnectionString = BuildConnectionString(
                     dbInstance.Engine,
                     dbInstance.Port,
@@ -219,7 +187,6 @@ namespace CrudCloudDb.Infrastructure.Services
                     }
                 );
 
-                // 4. Enviar email con nueva contraseña
                 await _emailService.SendPasswordResetEmailAsync(new PasswordResetEmailDto
                 {
                     UserEmail = user.Email,
@@ -232,7 +199,7 @@ namespace CrudCloudDb.Infrastructure.Services
                     ResetAt = DateTime.UtcNow
                 });
 
-                _logger.LogInformation($"✅ Password reseteado exitosamente para {dbInstance.Name}");
+                _logger.LogInformation($" Password reseteado exitosamente para {dbInstance.Name}");
 
                 return new PasswordResetResult
                 {
@@ -244,15 +211,11 @@ namespace CrudCloudDb.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"❌ Error reseteando password");
+                _logger.LogError(ex, $" Error reseteando password");
                 throw;
             }
         }
 
-        /// <summary>
-        /// Rota las credenciales de una base de datos (cambio automático programado)
-        /// Similar a reset pero puede ser automático/programado
-        /// </summary>
         public async Task<PasswordResetResult> RotateDatabaseCredentialsAsync(
             DatabaseInstance dbInstance,
             User user,
@@ -260,12 +223,10 @@ namespace CrudCloudDb.Infrastructure.Services
         {
             try
             {
-                _logger.LogInformation($"🔄 Rotando credenciales para BD {dbInstance.Name}");
-
-                // 1. Generar nuevas credenciales
+                _logger.LogInformation($" Rotando credenciales para BD {dbInstance.Name}");
+                
                 var newCredentials = await _credentialService.GenerateCredentialsAsync();
-
-                // 2. Ejecutar cambio de password en el contenedor
+                
                 var resetSuccess = await ExecutePasswordResetInContainerAsync(
                     dbInstance.ContainerId,
                     dbInstance.Engine,
@@ -278,7 +239,6 @@ namespace CrudCloudDb.Infrastructure.Services
                     throw new Exception("Failed to rotate credentials in container");
                 }
 
-                // 3. Construir nuevo connection string
                 var newConnectionString = BuildConnectionString(
                     dbInstance.Engine,
                     dbInstance.Port,
@@ -290,8 +250,7 @@ namespace CrudCloudDb.Infrastructure.Services
                         PasswordHash = newCredentials.PasswordHash
                     }
                 );
-
-                // 4. Enviar email solo si se solicita (para rotaciones automáticas puede ser opcional)
+                
                 if (notifyUser)
                 {
                     await _emailService.SendPasswordResetEmailAsync(new PasswordResetEmailDto
@@ -307,7 +266,7 @@ namespace CrudCloudDb.Infrastructure.Services
                     });
                 }
 
-                _logger.LogInformation($"✅ Credenciales rotadas exitosamente para {dbInstance.Name}");
+                _logger.LogInformation($" Credenciales rotadas exitosamente para {dbInstance.Name}");
 
                 return new PasswordResetResult
                 {
@@ -319,14 +278,10 @@ namespace CrudCloudDb.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"❌ Error rotando credenciales");
+                _logger.LogError(ex, $" Error rotando credenciales");
                 throw;
             }
         }
-
-        // ============================================
-        // MÉTODOS DE GESTIÓN DE CONTENEDORES
-        // ============================================
 
         public async Task<bool> StopContainerAsync(string containerId)
         {
@@ -336,7 +291,7 @@ namespace CrudCloudDb.Infrastructure.Services
                     containerId,
                     new ContainerStopParameters { WaitBeforeKillSeconds = 10 });
                 
-                _logger.LogInformation($"🛑 Contenedor detenido: {containerId[..12]}");
+                _logger.LogInformation($" Contenedor detenido: {containerId[..12]}");
                 return true;
             }
             catch (Exception ex)
@@ -354,7 +309,7 @@ namespace CrudCloudDb.Infrastructure.Services
                     containerId,
                     new ContainerStartParameters());
 
-                _logger.LogInformation($"▶️  Contenedor iniciado: {containerId[..12]}");
+                _logger.LogInformation($"️  Contenedor iniciado: {containerId[..12]}");
                 return true;
             }
             catch (Exception ex)
@@ -372,7 +327,7 @@ namespace CrudCloudDb.Infrastructure.Services
                     containerId,
                     new ContainerRemoveParameters { Force = true });
                 
-                _logger.LogInformation($"🗑️  Contenedor eliminado: {containerId[..12]}");
+                _logger.LogInformation($"🗑  Contenedor eliminado: {containerId[..12]}");
                 return true;
             }
             catch (Exception ex)
@@ -420,9 +375,6 @@ namespace CrudCloudDb.Infrastructure.Services
                 return string.Empty;
             }
         }
-        // ============================================
-        // MÉTODOS DE CONFIGURACIÓN POR MOTOR
-        // ============================================
 
         private CreateContainerParameters CreatePostgreSQLConfig(
             string dbName,
@@ -461,8 +413,8 @@ namespace CrudCloudDb.Infrastructure.Services
                 Healthcheck = new HealthConfig
                 {
                     Test = new[] { "CMD-SHELL", $"pg_isready -U {credentials.Username}" },
-                    Interval = TimeSpan.FromSeconds(10),  // ✅ TimeSpan directamente
-                    Timeout = TimeSpan.FromSeconds(5),    // ✅ Sin .Ticks
+                    Interval = TimeSpan.FromSeconds(10),  
+                    Timeout = TimeSpan.FromSeconds(5),    
                     Retries = 5,
                     StartPeriod = TimeSpan.FromSeconds(30).Ticks
                 }
@@ -507,8 +459,8 @@ namespace CrudCloudDb.Infrastructure.Services
                 Healthcheck = new HealthConfig
                 {
                     Test = new[] { "CMD", "mysqladmin", "ping", "-h", "localhost" },
-                    Interval = TimeSpan.FromSeconds(10),  // ✅ TimeSpan directamente
-                    Timeout = TimeSpan.FromSeconds(5),    // ✅ Sin .Ticks
+                    Interval = TimeSpan.FromSeconds(10), 
+                    Timeout = TimeSpan.FromSeconds(5),    
                     Retries = 5,
                     StartPeriod = TimeSpan.FromSeconds(30).Ticks
                 }
@@ -552,28 +504,24 @@ namespace CrudCloudDb.Infrastructure.Services
                 Healthcheck = new HealthConfig
                 {
                     Test = new[] { "CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--quiet" },
-                    Interval = TimeSpan.FromSeconds(10),  // ✅ TimeSpan directamente
-                    Timeout = TimeSpan.FromSeconds(5),    // ✅ Sin .Ticks
+                    Interval = TimeSpan.FromSeconds(10), 
+                    Timeout = TimeSpan.FromSeconds(5),   
                     Retries = 5,
                     StartPeriod = TimeSpan.FromSeconds(30).Ticks
                 }
             };
         }
-
-        // ============================================
-        // MÉTODOS AUXILIARES PRIVADOS
-        // ============================================
-
+        
         private async Task EnsureImageExistsAsync(string image)
         {
             try
             {
                 await _dockerClient.Images.InspectImageAsync(image);
-                _logger.LogInformation($"✅ Imagen {image} ya existe");
+                _logger.LogInformation($" Imagen {image} ya existe");
             }
             catch (DockerImageNotFoundException)
             {
-                _logger.LogInformation($"📥 Descargando imagen {image}...");
+                _logger.LogInformation($" Descargando imagen {image}...");
                 await _dockerClient.Images.CreateImageAsync(
                     new ImagesCreateParameters { FromImage = image },
                     null,
@@ -582,7 +530,7 @@ namespace CrudCloudDb.Infrastructure.Services
                         if (!string.IsNullOrEmpty(m.Status))
                             _logger.LogInformation($"   {m.Status}");
                     }));
-                _logger.LogInformation($"✅ Imagen {image} descargada");
+                _logger.LogInformation($" Imagen {image} descargada");
             }
         }
 
@@ -607,7 +555,7 @@ namespace CrudCloudDb.Infrastructure.Services
 
                 if (!inspect.State.Running)
                 {
-                    _logger.LogError($"   Contenedor no está corriendo");
+                    _logger.LogError($" Contenedor no está corriendo");
                     return false;
                 }
 
@@ -665,13 +613,13 @@ namespace CrudCloudDb.Infrastructure.Services
 
                 await _dockerClient.Exec.StartContainerExecAsync(execResponse.ID);
 
-                _logger.LogInformation($"✅ Password reset command executed in container");
+                _logger.LogInformation($" Password reset command executed in container");
 
                 return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Error executing password reset command");
+                _logger.LogError(ex, " Error executing password reset command");
                 return false;
             }
         }

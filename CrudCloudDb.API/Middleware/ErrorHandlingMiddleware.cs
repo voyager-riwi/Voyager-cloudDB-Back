@@ -30,7 +30,7 @@ namespace CrudCloudDb.API.Middleware
 
         private static Task HandleExceptionAsync(HttpContext context, Exception exception)
         {
-            var statusCode = HttpStatusCode.InternalServerError; // Por defecto es 500
+            var statusCode = HttpStatusCode.InternalServerError; 
             var message = "Ocurrió un error inesperado al procesar tu solicitud.";
             var errorType = exception.GetType().Name;
             
