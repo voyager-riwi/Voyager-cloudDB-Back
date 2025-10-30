@@ -1,0 +1,65 @@
+name: 🚀 Deploy to Production
+
+on:
+  push:
+    branches:
+      - deployment/docker-nginx
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy to voyager.andrescortes.dev
+    
+    steps:
+      - name: 🚀 Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            echo "📦 Starting deployment for CrudCloudDb..."
+            echo "==========================================="
+            
+            cd ~/Voyager-cloudDB-Back
+            
+            echo "⬇️  Pulling latest code from GitHub..."
+            git pull origin deployment/docker-nginx
+            
+            echo "🛑 Stopping current container..."
+            docker stop crudclouddb_container || true
+            docker rm crudclouddb_container || true
+            
+            echo "🔨 Building new Docker image..."
+            docker build -t crudclouddb-api:latest .
+            
+            echo "▶️  Starting new container..."
+            docker run -d \
+              --name crudclouddb_container \
+              --restart unless-stopped \
+              --network host \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -e ASPNETCORE_ENVIRONMENT=Production \
+              crudclouddb-api:latest
+            
+            echo "⏳ Waiting for container to start..."
+            sleep 5
+            
+            if docker ps | grep -q crudclouddb_container; then
+              echo "✅ Container is running!"
+            else
+              echo "❌ Container failed to start!"
+              docker logs crudclouddb_container
+              exit 1
+            fi
+            
+            echo "🧹 Cleaning up old images..."
+            docker image prune -f
+            
+            echo "📋 Recent container logs:"
+            docker logs --tail 20 crudclouddb_container
+            
+            echo "==========================================="
+            echo "✅ Deployment completed successfully!"
+            echo "🌐 API available at: https://voyager.andrescortes.dev"
