@@ -1,15 +1,11 @@
-// CrudCloudDb.Infrastructure/Services/CredentialService.cs
-
-using Microsoft.Extensions.Logging;
 using CrudCloudDb.Application.Services.Interfaces;
-using CrudCloudDb.Application.Utilities;
+using CrudCloudDb.Application.DTOs.Credential;
+using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace CrudCloudDb.Infrastructure.Services
 {
-    /// <summary>
-    /// Servicio para generar credenciales completas para bases de datos.
-    /// Combina generación de username/password con hashing seguro.
-    /// </summary>
     public class CredentialService : ICredentialService
     {
         private readonly ILogger<CredentialService> _logger;
@@ -19,32 +15,64 @@ namespace CrudCloudDb.Infrastructure.Services
             _logger = logger;
         }
 
-        /// <summary>
-        /// Genera credenciales completas (username, password en texto plano, y hash)
-        /// </summary>
-        /// <returns>Objeto con username, password y passwordHash</returns>
-        public async Task<CredentialResult> GenerateCredentialsAsync()
+        public Task<CredentialsResult> GenerateCredentialsAsync()
         {
-            // Generar username aleatorio usando la utilidad de Miguel
-            // Ejemplo resultado: "kx9f2q8p1m4n"
-            var username = CredentialGenerator.GenerateUsername(12);
-            
-            // Generar password seguro usando la utilidad de Miguel
-            // Ejemplo resultado: "Xy9!@zAb1#Cd2$Ef"
-            var password = CredentialGenerator.GeneratePassword(16);
-            
-            // Hashear el password usando BCrypt (utilidad de Miguel)
-            // Ejemplo resultado: "$2a$10$N9qo8uLOickgx2ZMRZoMye..."
-            var passwordHash = PasswordHasher.HashPassword(password);
+            var username = GenerateUsername();
+            var password = GenerateSecurePassword();
+            var passwordHash = HashPassword(password);
 
-            _logger.LogInformation($"🔑 Credenciales generadas para usuario: {username}");
-
-            return await Task.FromResult(new CredentialResult
+            return Task.FromResult(new CredentialsResult
             {
                 Username = username,
-                Password = password,           // Texto plano - solo para mostrar al usuario UNA vez
-                PasswordHash = passwordHash    // Hash BCrypt - esto se guarda en la BD
+                Password = password,
+                PasswordHash = passwordHash
             });
+        }
+
+        private string GenerateUsername()
+        {
+            const string letters = "abcdefghijklmnopqrstuvwxyz";
+            const string alphanumeric = "abcdefghijklmnopqrstuvwxyz0123456789";
+            
+            var result = new StringBuilder();
+            result.Append(letters[RandomNumberGenerator.GetInt32(letters.Length)]);
+            
+            for (int i = 0; i < 15; i++)
+            {
+                result.Append(alphanumeric[RandomNumberGenerator.GetInt32(alphanumeric.Length)]);
+            }
+
+            return result.ToString();
+        }
+
+        private string GenerateSecurePassword()
+        {
+            const string uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            const string lowercase = "abcdefghijklmnopqrstuvwxyz";
+            const string digits = "0123456789";
+            const string special = "@#$%^&*-_+=";
+            
+            var password = new StringBuilder();
+            
+            password.Append(uppercase[RandomNumberGenerator.GetInt32(uppercase.Length)]);
+            password.Append(lowercase[RandomNumberGenerator.GetInt32(lowercase.Length)]);
+            password.Append(digits[RandomNumberGenerator.GetInt32(digits.Length)]);
+            password.Append(special[RandomNumberGenerator.GetInt32(special.Length)]);
+            
+            const string allChars = uppercase + lowercase + digits + special;
+            for (int i = 0; i < 12; i++)
+            {
+                password.Append(allChars[RandomNumberGenerator.GetInt32(allChars.Length)]);
+            }
+            
+            return new string(password.ToString()
+                .OrderBy(x => RandomNumberGenerator.GetInt32(int.MaxValue))
+                .ToArray());
+        }
+
+        private string HashPassword(string password)
+        {
+            return BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
         }
     }
 }

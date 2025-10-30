@@ -29,13 +29,14 @@ namespace CrudCloudDb.Core.Entities
         public DateTime? PasswordResetExpires { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? LastLogin { get; set; }
-
-        // Relationships
+        
         public Guid CurrentPlanId { get; set; }
         public Plan CurrentPlan { get; set; } = null!;
 
         public ICollection<DatabaseInstance> Databases { get; set; } = new List<DatabaseInstance>();
         public ICollection<Subscription> Subscriptions { get; set; } = new List<Subscription>();
         public ICollection<WebhookConfig> WebhookConfigs { get; set; } = new List<WebhookConfig>();
+        public IEnumerable<DatabaseInstance>? DatabaseInstances { get; set; }
+        public string Name { get; set; } = string.Empty;
     }
 }

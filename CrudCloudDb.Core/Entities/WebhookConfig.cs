@@ -1,27 +1,53 @@
-﻿using CrudCloudDb.Core.Enums;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace CrudCloudDb.Core.Entities
 {
+    /// <summary>
+    /// Configuración de webhooks para notificaciones
+    /// </summary>
     public class WebhookConfig
     {
-        public Guid Id { get; set; }  = Guid.NewGuid();
+        public Guid Id { get; set; }
         
-        [Required]
+        /// <summary>
+        /// Usuario propietario del webhook
+        /// </summary>
         public Guid UserId { get; set; }
-        public User User { get; set; } = null!;
+        public User User { get; set; }
         
+        /// <summary>
+        /// URL del webhook
+        /// </summary>
         [Required]
+        [MaxLength(500)]
         [Url]
-        public string PayloadUrl { get; set; } = string.Empty;
+        public string Url { get; set; } = string.Empty;
         
+        /// <summary>
+        /// Secret para firmar las peticiones (opcional)
+        /// </summary>
+        [MaxLength(255)]
         public string? Secret { get; set; }
         
+        /// <summary>
+        /// Indica si el webhook está activo
+        /// </summary>
         public bool IsActive { get; set; } = true;
         
-        // Example: Storing events as a comma-separated string or as a related entity
+        /// <summary>
+        /// Eventos suscritos (separados por coma: DatabaseCreated,DatabaseDeleted)
+        /// </summary>
+        [MaxLength(500)]
         public string SubscribedEvents { get; set; } = string.Empty;
         
+        /// <summary>
+        /// Fecha de creación
+        /// </summary>
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        
+        /// <summary>
+        /// Última actualización
+        /// </summary>
+        public DateTime? UpdatedAt { get; set; }
     }
 }
