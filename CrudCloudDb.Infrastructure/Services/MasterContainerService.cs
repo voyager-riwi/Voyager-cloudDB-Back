@@ -18,10 +18,6 @@ namespace CrudCloudDb.Infrastructure.Services
         private const int POSTGRES_PORT = 5432;
         private const int MYSQL_PORT = 3306;
         private const int MONGODB_PORT = 27017;
-        
-        // Credenciales admin para contenedores maestros
-        private const string ADMIN_USER = "admin_voyager";
-        private const string ADMIN_PASSWORD = "VoyagerAdmin2024!@#Secure";
 
         public MasterContainerService(ILogger<MasterContainerService> logger)
         {
@@ -78,8 +74,7 @@ namespace CrudCloudDb.Infrastructure.Services
                         existingContainer.ContainerId,
                         new ContainerStartParameters());
                     
-                    // Esperar a que esté healthy
-                    await WaitForContainerHealthyAsync(existingContainer.ContainerId);
+                    await Task.Delay(3000); // Esperar 3 segundos
                 }
                 
                 existingContainer.IsRunning = true;
@@ -114,29 +109,46 @@ namespace CrudCloudDb.Infrastructure.Services
         {
             try
             {
-                var containerName = GetMasterContainerName(engine);
+                // Nombres de contenedores existentes en el servidor
+                var possibleNames = engine switch
+                {
+                    DatabaseEngine.PostgreSQL => new[] { "postgres", "voyager_master_postgresql" },
+                    DatabaseEngine.MySQL => new[] { "mysql", "voyager_master_mysql" },
+                    DatabaseEngine.MongoDB => new[] { "voyager_master_mongodb", "mongo" },
+                    _ => Array.Empty<string>()
+                };
                 
                 var containers = await _dockerClient.Containers.ListContainersAsync(
                     new ContainersListParameters { All = true });
                 
-                var masterContainer = containers.FirstOrDefault(c => 
-                    c.Names.Any(n => n.Contains(containerName)));
-                
-                if (masterContainer == null)
-                    return null;
-                
-                var isRunning = masterContainer.State == "running";
-                
-                return new MasterContainerInfo
+                foreach (var possibleName in possibleNames)
                 {
-                    ContainerId = masterContainer.ID,
-                    Engine = engine,
-                    Port = GetPortForEngine(engine),
-                    Host = "localhost",
-                    AdminUsername = ADMIN_USER,
-                    AdminPassword = ADMIN_PASSWORD,
-                    IsRunning = isRunning
-                };
+                    var masterContainer = containers.FirstOrDefault(c => 
+                        c.Names.Any(n => n.TrimStart('/') == possibleName));
+                    
+                    if (masterContainer != null)
+                    {
+                        var isRunning = masterContainer.State == "running";
+                        
+                        // Obtener credenciales según el contenedor
+                        var (adminUser, adminPassword) = GetCredentialsForEngine(engine);
+                        
+                        _logger.LogInformation($"✅ Found container: {possibleName} for {engine}");
+                        
+                        return new MasterContainerInfo
+                        {
+                            ContainerId = masterContainer.ID,
+                            Engine = engine,
+                            Port = GetPortForEngine(engine),
+                            Host = "localhost",
+                            AdminUsername = adminUser,
+                            AdminPassword = adminPassword,
+                            IsRunning = isRunning
+                        };
+                    }
+                }
+                
+                return null;
             }
             catch (Exception ex)
             {
@@ -145,19 +157,31 @@ namespace CrudCloudDb.Infrastructure.Services
             }
         }
 
+        private (string username, string password) GetCredentialsForEngine(DatabaseEngine engine)
+        {
+            return engine switch
+            {
+                DatabaseEngine.PostgreSQL => ("postgres", "cambiarestapassword"),
+                DatabaseEngine.MySQL => ("root", "cambiarestapassword"),
+                DatabaseEngine.MongoDB => ("admin", "cambiarestapassword"),
+                _ => throw new NotSupportedException()
+            };
+        }
+
         private async Task<MasterContainerInfo> CreateMasterContainerAsync(DatabaseEngine engine)
         {
             var containerName = GetMasterContainerName(engine);
             var port = GetPortForEngine(engine);
+            var (adminUser, adminPassword) = GetCredentialsForEngine(engine);
             
             _logger.LogInformation($"📦 Creating master container: {containerName} on port {port}");
             
             // Configuración según el motor
             var config = engine switch
             {
-                DatabaseEngine.PostgreSQL => CreatePostgreSQLMasterConfig(containerName, port),
-                DatabaseEngine.MySQL => CreateMySQLMasterConfig(containerName, port),
-                DatabaseEngine.MongoDB => CreateMongoDBMasterConfig(containerName, port),
+                DatabaseEngine.PostgreSQL => CreatePostgreSQLMasterConfig(containerName, port, adminUser, adminPassword),
+                DatabaseEngine.MySQL => CreateMySQLMasterConfig(containerName, port, adminPassword),
+                DatabaseEngine.MongoDB => CreateMongoDBMasterConfig(containerName, port, adminUser, adminPassword),
                 _ => throw new NotSupportedException($"Engine {engine} not supported")
             };
             
@@ -173,8 +197,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 container.ID,
                 new ContainerStartParameters());
             
-            // Esperar a que esté healthy
-            await WaitForContainerHealthyAsync(container.ID);
+            await Task.Delay(5000); // Esperar 5 segundos
             
             _logger.LogInformation($"🎉 Master container {engine} ready!");
             
@@ -184,13 +207,13 @@ namespace CrudCloudDb.Infrastructure.Services
                 Engine = engine,
                 Port = port,
                 Host = "localhost",
-                AdminUsername = ADMIN_USER,
-                AdminPassword = ADMIN_PASSWORD,
+                AdminUsername = adminUser,
+                AdminPassword = adminPassword,
                 IsRunning = true
             };
         }
 
-        private CreateContainerParameters CreatePostgreSQLMasterConfig(string name, int port)
+        private CreateContainerParameters CreatePostgreSQLMasterConfig(string name, int port, string adminUser, string adminPassword)
         {
             return new CreateContainerParameters
             {
@@ -198,8 +221,8 @@ namespace CrudCloudDb.Infrastructure.Services
                 Name = name,
                 Env = new List<string>
                 {
-                    $"POSTGRES_USER={ADMIN_USER}",
-                    $"POSTGRES_PASSWORD={ADMIN_PASSWORD}",
+                    $"POSTGRES_USER={adminUser}",
+                    $"POSTGRES_PASSWORD={adminPassword}",
                     "POSTGRES_DB=postgres"
                 },
                 HostConfig = new HostConfig
@@ -218,19 +241,11 @@ namespace CrudCloudDb.Infrastructure.Services
                     {
                         Name = RestartPolicyKind.UnlessStopped
                     }
-                },
-                Healthcheck = new HealthConfig
-                {
-                    Test = new[] { "CMD-SHELL", $"pg_isready -U {ADMIN_USER}" },
-                    Interval = TimeSpan.FromSeconds(10),
-                    Timeout = TimeSpan.FromSeconds(5),
-                    Retries = 5,
-                    StartPeriod = TimeSpan.FromSeconds(30).Ticks
                 }
             };
         }
 
-        private CreateContainerParameters CreateMySQLMasterConfig(string name, int port)
+        private CreateContainerParameters CreateMySQLMasterConfig(string name, int port, string adminPassword)
         {
             return new CreateContainerParameters
             {
@@ -238,9 +253,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 Name = name,
                 Env = new List<string>
                 {
-                    $"MYSQL_ROOT_PASSWORD={ADMIN_PASSWORD}",
-                    $"MYSQL_USER={ADMIN_USER}",
-                    $"MYSQL_PASSWORD={ADMIN_PASSWORD}"
+                    $"MYSQL_ROOT_PASSWORD={adminPassword}"
                 },
                 HostConfig = new HostConfig
                 {
@@ -258,19 +271,11 @@ namespace CrudCloudDb.Infrastructure.Services
                     {
                         Name = RestartPolicyKind.UnlessStopped
                     }
-                },
-                Healthcheck = new HealthConfig
-                {
-                    Test = new[] { "CMD", "mysqladmin", "ping", "-h", "localhost" },
-                    Interval = TimeSpan.FromSeconds(10),
-                    Timeout = TimeSpan.FromSeconds(5),
-                    Retries = 5,
-                    StartPeriod = TimeSpan.FromSeconds(30).Ticks
                 }
             };
         }
 
-        private CreateContainerParameters CreateMongoDBMasterConfig(string name, int port)
+        private CreateContainerParameters CreateMongoDBMasterConfig(string name, int port, string adminUser, string adminPassword)
         {
             return new CreateContainerParameters
             {
@@ -278,8 +283,8 @@ namespace CrudCloudDb.Infrastructure.Services
                 Name = name,
                 Env = new List<string>
                 {
-                    $"MONGO_INITDB_ROOT_USERNAME={ADMIN_USER}",
-                    $"MONGO_INITDB_ROOT_PASSWORD={ADMIN_PASSWORD}"
+                    $"MONGO_INITDB_ROOT_USERNAME={adminUser}",
+                    $"MONGO_INITDB_ROOT_PASSWORD={adminPassword}"
                 },
                 HostConfig = new HostConfig
                 {
@@ -297,14 +302,6 @@ namespace CrudCloudDb.Infrastructure.Services
                     {
                         Name = RestartPolicyKind.UnlessStopped
                     }
-                },
-                Healthcheck = new HealthConfig
-                {
-                    Test = new[] { "CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--quiet" },
-                    Interval = TimeSpan.FromSeconds(10),
-                    Timeout = TimeSpan.FromSeconds(5),
-                    Retries = 5,
-                    StartPeriod = TimeSpan.FromSeconds(30).Ticks
                 }
             };
         }
@@ -354,31 +351,6 @@ namespace CrudCloudDb.Infrastructure.Services
                     new Progress<JSONMessage>());
                 _logger.LogInformation($"✅ Image {image} downloaded");
             }
-        }
-
-        private async Task<bool> WaitForContainerHealthyAsync(string containerId, int maxWaitSeconds = 60)
-        {
-            var startTime = DateTime.UtcNow;
-
-            while ((DateTime.UtcNow - startTime).TotalSeconds < maxWaitSeconds)
-            {
-                var inspect = await _dockerClient.Containers.InspectContainerAsync(containerId);
-
-                var healthStatus = inspect.State.Health?.Status ?? "no healthcheck";
-                
-                if (healthStatus == "healthy" || 
-                    (inspect.State.Running && inspect.State.Health == null))
-                {
-                    return true;
-                }
-
-                if (!inspect.State.Running)
-                    return false;
-
-                await Task.Delay(2000);
-            }
-
-            return false;
         }
     }
 }

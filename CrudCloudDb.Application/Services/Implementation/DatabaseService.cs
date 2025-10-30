@@ -4,6 +4,7 @@ using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Core.Entities;
 using CrudCloudDb.Core.Enums;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration; // ⭐ NUEVA LÍNEA
 
 namespace CrudCloudDb.Application.Services.Implementation
 {
@@ -16,17 +17,20 @@ namespace CrudCloudDb.Application.Services.Implementation
         private readonly IDatabaseInstanceRepository _databaseRepository;
         private readonly IUserRepository _userRepository;
         private readonly ILogger<DatabaseService> _logger;
+        private readonly IConfiguration _configuration; // ⭐ NUEVA LÍNEA
 
         public DatabaseService(
             IDockerService dockerService,
             IDatabaseInstanceRepository databaseRepository,
             IUserRepository userRepository,
-            ILogger<DatabaseService> logger)
+            ILogger<DatabaseService> logger,
+            IConfiguration configuration) // ⭐ NUEVO PARÁMETRO
         {
             _dockerService = dockerService;
             _databaseRepository = databaseRepository;
             _userRepository = userRepository;
             _logger = logger;
+            _configuration = configuration; // ⭐ NUEVA LÍNEA
         }
 
         /// <summary>
@@ -261,8 +265,30 @@ namespace CrudCloudDb.Application.Services.Implementation
         }
 
         // ============================================
-        // MÉTODO PRIVADO: Mapear entidad a DTO
+        // MÉTODOS PRIVADOS
         // ============================================
+        
+        /// <summary>
+        /// Obtiene el host configurado según el motor de base de datos
+        /// </summary>
+        private string GetDatabaseHost(DatabaseEngine engine)
+        {
+            var engineName = engine.ToString();
+            var host = _configuration[$"DatabaseHosts:{engineName}"];
+            
+            if (string.IsNullOrEmpty(host))
+            {
+                _logger.LogWarning($"⚠️ Host not configured for {engineName}, using localhost");
+                return "localhost";
+            }
+            
+            _logger.LogInformation($"🌐 Using host {host} for {engineName}");
+            return host;
+        }
+
+        /// <summary>
+        /// Mapea una entidad DatabaseInstance a DTO
+        /// </summary>
         private DatabaseResponseDto MapToDto(DatabaseInstance db, bool? isRunning = null, bool checkRunning = true)
         {
             return new DatabaseResponseDto
@@ -272,7 +298,7 @@ namespace CrudCloudDb.Application.Services.Implementation
                 Engine = db.Engine.ToString(),
                 Status = db.Status.ToString(),
                 Port = db.Port,
-                Host = "localhost", // TODO: En producción cambiar a dominio real
+                Host = GetDatabaseHost(db.Engine), // ⭐ CAMBIÓ DE "localhost" A GetDatabaseHost
                 Username = db.Username,
                 ConnectionString = db.ConnectionString,
                 CreatedAt = db.CreatedAt,

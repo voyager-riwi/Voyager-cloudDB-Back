@@ -9,6 +9,7 @@ using CrudCloudDb.Application.DTOs.Credential;
 using Npgsql;
 using MySqlConnector;
 using MongoDB.Driver;
+using Microsoft.Extensions.Configuration;
 
 namespace CrudCloudDb.Infrastructure.Services
 {
@@ -19,17 +20,20 @@ namespace CrudCloudDb.Infrastructure.Services
         private readonly ICredentialService _credentialService;
         private readonly IEmailService _emailService;
         private readonly ILogger<DockerService> _logger;
+        private readonly IConfiguration _configuration; 
 
         public DockerService(
             IMasterContainerService masterContainerService,
             ICredentialService credentialService,
             IEmailService emailService,
-            ILogger<DockerService> logger)
+            ILogger<DockerService> logger,
+            IConfiguration configuration) 
         {
             _masterContainerService = masterContainerService;
             _credentialService = credentialService;
             _emailService = emailService;
             _logger = logger;
+            _configuration = configuration;
 
             if (OperatingSystem.IsWindows())
             {
@@ -627,16 +631,26 @@ namespace CrudCloudDb.Infrastructure.Services
             string dbName,
             CredentialsResult credentials)
         {
+            // ⭐ OBTENER HOST DESDE CONFIGURACIÓN
+            var engineName = engine.ToString();
+            var host = _configuration[$"DatabaseHosts:{engineName}"];
+    
+            if (string.IsNullOrEmpty(host))
+            {
+                _logger.LogWarning($"⚠️ Host not configured for {engineName}, using localhost");
+                host = "localhost";
+            }
+
             return engine switch
             {
                 DatabaseEngine.PostgreSQL =>
-                    $"Host=localhost;Port={port};Database={dbName};Username={credentials.Username};Password={credentials.Password}",
+                    $"Host={host};Port={port};Database={dbName};Username={credentials.Username};Password={credentials.Password}",
 
                 DatabaseEngine.MySQL =>
-                    $"Server=localhost;Port={port};Database={dbName};Uid={credentials.Username};Pwd={credentials.Password}",
+                    $"Server={host};Port={port};Database={dbName};Uid={credentials.Username};Pwd={credentials.Password}",
 
                 DatabaseEngine.MongoDB =>
-                    $"mongodb://{credentials.Username}:{credentials.Password}@localhost:{port}/{dbName}?authSource={dbName}",
+                    $"mongodb://{credentials.Username}:{credentials.Password}@{host}:{port}/{dbName}?authSource={dbName}",
 
                 _ => throw new NotSupportedException()
             };
