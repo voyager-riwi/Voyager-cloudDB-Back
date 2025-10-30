@@ -1,34 +1,35 @@
-﻿// CrudCloudDb.Application/Services/Interfaces/IEmailService.cs
-
-using CrudCloudDb.Application.DTOs.Email;
+﻿using CrudCloudDb.Application.DTOs.Email;
 
 namespace CrudCloudDb.Application.Services.Interfaces
 {
+    /// <summary>
+    /// Servicio para envío de emails
+    /// </summary>
     public interface IEmailService
     {
         /// <summary>
-        /// Envía email cuando se crea una base de datos
+        /// Envía email de bienvenida al crear cuenta
         /// </summary>
-        Task SendDatabaseCreatedEmailAsync(DatabaseCreatedEmailDto dto);
+        Task SendAccountCreatedEmailAsync(AccountCreatedEmailDto emailDto);
 
         /// <summary>
-        /// Envía email cuando se elimina una base de datos
+        /// Envía email al crear base de datos con credenciales
         /// </summary>
-        Task SendDatabaseDeletedEmailAsync(DatabaseDeletedEmailDto dto);
+        Task SendDatabaseCreatedEmailAsync(DatabaseCreatedEmailDto emailDto);
 
         /// <summary>
-        /// Envía email cuando se resetea la contraseña
+        /// Envía email al eliminar base de datos
         /// </summary>
-        Task SendPasswordResetEmailAsync(PasswordResetEmailDto dto);
+        Task SendDatabaseDeletedEmailAsync(DatabaseDeletedEmailDto emailDto);
 
         /// <summary>
-        /// Envía email de bienvenida (puede ser útil)
+        /// Envía email al cambiar o renovar plan
         /// </summary>
-        Task SendWelcomeEmailAsync(string email, string userName);
+        Task SendPlanChangedEmailAsync(PlanChangedEmailDto emailDto);
 
         /// <summary>
-        /// Envía email genérico
+        /// Envía email al resetear password de base de datos
         /// </summary>
-        Task SendEmailAsync(string to, string subject, string body);
+        Task SendPasswordResetEmailAsync(PasswordResetEmailDto emailDto);
     }
 }

@@ -1,25 +1,26 @@
 // =======================
 // 1️⃣ Using Statements
 // =======================
-
 using System.Text;
 using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Application.Services.Implementation;
 using CrudCloudDb.Application.Services.Interfaces;
 using CrudCloudDb.Infrastructure.Data;
-using Microsoft.AspNetCore.Builder;
+using CrudCloudDb.Infrastructure.Services;
+using CrudCloudDb.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
-using CrudCloudDb.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
 // =======================
-//  Builder Initialization
+// 2️⃣ Builder Initialization
 // =======================
 var builder = WebApplication.CreateBuilder(args);
 
-
+// =======================
+// 3️⃣ CORS Configuration
+// =======================
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -31,7 +32,7 @@ builder.Services.AddCors(options =>
 });
 
 // =======================
-// 5️⃣ Database Configuration
+// 4️⃣ Database Configuration
 // =======================
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -39,54 +40,95 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
         .UseSnakeCaseNamingConvention());
 
 // =======================
-//  JWT configuration 
+// 5️⃣ JWT Authentication Configuration
 // =======================
-
 builder.Services.AddAuthentication(options =>
-    {
-        // Le decimos que se encargara de validar credenciales
-        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-    })
-    //damos las instrucciones
-    .AddJwtBearer(options =>
-    {
-        var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-        var secret = jwtSettings["Secret"];
-        if(secret == null) throw new ArgumentNullException(nameof(secret), "JWT Secret not configured.");
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+    var secret = jwtSettings["Secret"];
+    if (secret == null) 
+        throw new ArgumentNullException(nameof(secret), "JWT Secret not configured.");
 
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true, //revisa lo mas importante, osea la clave
-            ValidIssuer = jwtSettings["Issuer"],
-            ValidAudience = jwtSettings["Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret))
-        };
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtSettings["Issuer"],
+        ValidAudience = jwtSettings["Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
+        ClockSkew = TimeSpan.Zero // Sin margen de tiempo extra
+    };
+});
+
+builder.Services.AddAuthorization();
+
+// =======================
+// 6️⃣ Repositories Registration
+// =======================
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IPlanRepository, PlanRepository>();
+builder.Services.AddScoped<IDatabaseInstanceRepository, DatabaseInstanceRepository>(); // ⭐ AGREGADO
+builder.Services.AddScoped<IEmailLogRepository, EmailLogRepository>(); 
+
+// =======================
+// 7️⃣ Services Registration
+// =======================
+// Auth Services (de Miguel)
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IUserService, UserService>();
+
+// Database Services (tuyos) ⭐ AGREGADOS
+builder.Services.AddScoped<IMasterContainerService, MasterContainerService>();
+builder.Services.AddScoped<IDockerService, DockerService>();
+builder.Services.AddScoped<IDatabaseService, DatabaseService>();
+builder.Services.AddScoped<IPortManagerService, PortManagerService>();
+builder.Services.AddScoped<ICredentialService, CredentialService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
+
+// =======================
+// 8️⃣ Controllers Configuration
+// =======================
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // Convertir enums a strings en JSON
+        options.JsonSerializerOptions.Converters.Add(
+            new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 
 // =======================
-// 6️⃣ Service Configuration
+// 9️⃣ Swagger Configuration
 // =======================
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
-    // Configuración básica de Swagger
-    options.SwaggerDoc("v1", new OpenApiInfo { Title = "CrudCloudDb.API", Version = "v1" });
+    // Configuración básica
+    options.SwaggerDoc("v1", new OpenApiInfo 
+    { 
+        Title = "CrudCloudDb API", 
+        Version = "v1",
+        Description = "API para gestión de bases de datos on-demand"
+    });
 
-    // Pantallita para definir el esquema, para introducir el token
+    // Configuración JWT para Swagger
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         In = ParameterLocation.Header,
-        Description = "Por favor, introduce 'Bearer' seguido de un espacio y el token JWT",
+        Description = "JWT Authorization header using the Bearer scheme.\n\n" +
+                      "Enter 'Bearer' [space] and then your token in the text input below.\n\n" +
+                      "Example: \"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\"",
         Name = "Authorization",
         Type = SecuritySchemeType.ApiKey,
         Scheme = "Bearer"
     });
 
-    // Le decimos a Swagger que aplique este requisito de seguridad a las operaciones
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
@@ -98,67 +140,63 @@ builder.Services.AddSwaggerGen(options =>
                     Id = "Bearer"
                 }
             },
-            new string[] {}
+            Array.Empty<string>()
         }
     });
 });
 
-builder.Services.AddControllers();
-
-// TODO: Aquí irán los servicios
-// builder.Services.AddScoped<IDockerService, DockerService>();
-
-// Registro de repositorios
-builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddScoped<IPlanRepository, PlanRepository>();
-//builder.Services.AddScoped<IDatabaseInstanceRepository, DatabaseInstanceRepository>();
-
-// Registro de servicios
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IUserService, UserService>();
-
 // =======================
-// 7️⃣ Build App
+// 🔟 Build App
 // =======================
 var app = builder.Build();
 
 // =======================
-// 8️⃣ Middleware Configuration
+// 1️⃣1️⃣ Middleware Configuration
 // =======================
-// ¡OJO! El orden del middleware es MUY importante.
+// ⚠️ IMPORTANTE: El orden del middleware es CRÍTICO
 
+// CORS (siempre primero)
 app.UseCors("AllowAll");
 
-// Swagger (configuración flexible por ambiente)
+// Swagger (Development y Production)
 if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "CrudCloudDb API v1");
+        c.RoutePrefix = "swagger";
+        c.DocumentTitle = "CrudCloudDb API Documentation";
+    });
 }
 
-// HTTPS Redirect (flexible)
+// HTTPS Redirect (solo en desarrollo local sin Docker)
 if (app.Environment.IsDevelopment() && !builder.Configuration.GetValue<bool>("IsDocker"))
 {
     app.UseHttpsRedirection();
 }
 
-// Autenticación y Autorización - DEBEN ir DESPUÉS de CORS y ANTES de MapControllers
+// ⭐ CRÍTICO: Authentication ANTES de Authorization
 app.UseAuthentication(); 
 app.UseAuthorization();
 
 // =======================
-// 9️⃣ Endpoint Mapping
+// 1️⃣2️⃣ Endpoint Mapping
 // =======================
 
+// Root endpoint (público)
 app.MapGet("/", () => Results.Ok(new
 {
     message = "CrudCloudDb API is running! 🚀",
     environment = app.Environment.EnvironmentName,
-    timestamp = DateTime.UtcNow
+    timestamp = DateTime.UtcNow,
+    version = "1.0.0"
 }))
-    .WithName("RootEndpoint")
-    .WithOpenApi();
+.WithName("RootEndpoint")
+.WithOpenApi()
+.WithTags("Health");
 
+// Health endpoint (público)
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "healthy",
@@ -166,12 +204,14 @@ app.MapGet("/health", () => Results.Ok(new
     environment = app.Environment.EnvironmentName,
     version = "1.0.0"
 }))
-    .WithName("HealthCheck")
-    .WithOpenApi();
+.WithName("HealthCheck")
+.WithOpenApi()
+.WithTags("Health");
 
+// Mapear todos los controllers
 app.MapControllers();
 
 // =======================
-// 🔟 Run App
+// 1️⃣3️⃣ Run App
 // =======================
 app.Run();

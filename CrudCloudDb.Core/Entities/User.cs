@@ -36,5 +36,7 @@ namespace CrudCloudDb.Core.Entities
         public ICollection<DatabaseInstance> Databases { get; set; } = new List<DatabaseInstance>();
         public ICollection<Subscription> Subscriptions { get; set; } = new List<Subscription>();
         public ICollection<WebhookConfig> WebhookConfigs { get; set; } = new List<WebhookConfig>();
+        public IEnumerable<DatabaseInstance>? DatabaseInstances { get; set; }
+        public string Name { get; set; } = string.Empty;
     }
 }
