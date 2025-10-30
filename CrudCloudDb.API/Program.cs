@@ -20,7 +20,7 @@ using Microsoft.IdentityModel.Tokens;
 // =======================
 var builder = WebApplication.CreateBuilder(args);
 // Configurar para escuchar en puerto 8081 (Docker)
-builder.WebHost.UseUrls("http://0.0.0.0:8081");
+builder.WebHost.UseUrls("http://0.0.0.0:5191");
 
 // Configurar CORS para que el frontend pueda consumir
 builder.Services.AddCors(options =>
@@ -151,8 +151,6 @@ builder.Services.AddSwaggerGen(options =>
 // 🔟 Build App
 // =======================
 var app = builder.Build();
-// Usar CORS
-app.UseCors("AllowAll");
 
 // =======================
 // 1️⃣1️⃣ Middleware Configuration
@@ -214,17 +212,6 @@ app.MapGet("/health", () => Results.Ok(new
 
 // Mapear todos los controllers
 app.MapControllers();
-
-// Health check endpoint
-app.MapGet("/health", () => new
-    {
-        status = "healthy",
-        timestamp = DateTime.UtcNow,
-        environment = app.Environment.EnvironmentName,
-        version = "1.0.0"
-    })
-    .WithName("HealthCheck")
-    .WithOpenApi();
 
 // =======================
 // 1️⃣3️⃣ Run App
