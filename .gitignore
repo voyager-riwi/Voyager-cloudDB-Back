@@ -53,7 +53,8 @@ bld/
 appsettings.Development.json
 appsettings.Local.json
 appsettings.*.json
-!appsettings.json  # Permitir solo appsettings.json base
+!appsettings.json  # Permitir appsettings.json base
+!appsettings.Production.json  # ⭐ Permitir Production
 
 # Secrets
 secrets.json
