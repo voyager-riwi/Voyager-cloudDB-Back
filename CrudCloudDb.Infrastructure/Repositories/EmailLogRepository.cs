@@ -1,33 +1,85 @@
 ﻿using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Core.Entities;
 using CrudCloudDb.Infrastructure.Data;
-using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
-using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace CrudCloudDb.Infrastructure.Repositories
 {
+    /// <summary>
+    /// Repositorio para gestión de logs de emails
+    /// </summary>
     public class EmailLogRepository : IEmailLogRepository
     {
         private readonly ApplicationDbContext _context;
         private readonly ILogger<EmailLogRepository> _logger;
 
-        public EmailLogRepository(ApplicationDbContext context, ILogger<EmailLogRepository> logger)
+        public EmailLogRepository(
+            ApplicationDbContext context,
+            ILogger<EmailLogRepository> logger)
         {
             _context = context;
             _logger = logger;
         }
 
-        public async Task AddAsync(EmailLog log)
+        public async Task<EmailLog> CreateAsync(EmailLog emailLog)
         {
             try
             {
-                await _context.EmailLogs.AddAsync(log);
+                _context.EmailLogs.Add(emailLog);
                 await _context.SaveChangesAsync();
+                return emailLog;
             }
-            catch (DbUpdateException ex)
+            catch (Exception ex)
             {
-                _logger.LogError(ex, "Error al guardar el log de email en la base de datos.");
+                _logger.LogError(ex, "Error creating email log");
+                throw;
+            }
+        }
+
+        public async Task<EmailLog?> GetByIdAsync(Guid id)
+        {
+            try
+            {
+                return await _context.EmailLogs
+                    .FirstOrDefaultAsync(e => e.Id == id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error getting email log by ID: {id}");
+                throw;
+            }
+        }
+
+        public async Task<IEnumerable<EmailLog>> GetByEmailAsync(string email)
+        {
+            try
+            {
+                return await _context.EmailLogs
+                    .Where(e => e.ToEmail == email)
+                    .OrderByDescending(e => e.SentAt)
+                    .ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error getting email logs for: {email}");
+                throw;
+            }
+        }
+
+        public async Task<IEnumerable<EmailLog>> GetRecentAsync(int count = 100)
+        {
+            try
+            {
+                return await _context.EmailLogs
+                    .OrderByDescending(e => e.SentAt)
+                    .Take(count)
+                    .ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting recent email logs");
+                throw;
             }
         }
     }

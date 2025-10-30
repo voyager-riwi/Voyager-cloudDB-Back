@@ -5,15 +5,13 @@ using CrudCloudDb.Core.Entities;
 using CrudCloudDb.Core.Enums;
 using CrudCloudDb.Application.Services.Interfaces;
 using CrudCloudDb.Application.DTOs.Email;
+using CrudCloudDb.Application.DTOs.Credential;
 using Npgsql;
 using MySqlConnector;
 using MongoDB.Driver;
 
 namespace CrudCloudDb.Infrastructure.Services
 {
-    /// <summary>
-    /// Servicio para gestión de bases de datos en contenedores maestros compartidos
-    /// </summary>
     public class DockerService : IDockerService
     {
         private readonly IDockerClient _dockerClient;
@@ -33,7 +31,6 @@ namespace CrudCloudDb.Infrastructure.Services
             _emailService = emailService;
             _logger = logger;
 
-            // Conectar a Docker
             if (OperatingSystem.IsWindows())
             {
                 var endpoints = new[]
@@ -62,9 +59,6 @@ namespace CrudCloudDb.Infrastructure.Services
             }
         }
 
-        /// <summary>
-        /// Crea una nueva base de datos en un contenedor maestro compartido
-        /// </summary>
         public async Task<DatabaseInstance> CreateDatabaseContainerAsync(
             User user,
             DatabaseEngine engine,
@@ -74,15 +68,12 @@ namespace CrudCloudDb.Infrastructure.Services
             {
                 _logger.LogInformation($"🚀 [{user.Email}] Creating {engine} database: {databaseName}");
 
-                // 1. OBTENER O CREAR CONTENEDOR MAESTRO
                 var masterContainer = await _masterContainerService.GetOrCreateMasterContainerAsync(engine);
                 _logger.LogInformation($"📦 Using master container: {masterContainer.ContainerId[..12]} on port {masterContainer.Port}");
 
-                // 2. GENERAR CREDENCIALES PARA EL USUARIO
                 var credentials = await _credentialService.GenerateCredentialsAsync();
                 _logger.LogInformation($"🔑 Generated credentials for user: {credentials.Username}");
 
-                // 3. CREAR BASE DE DATOS DENTRO DEL CONTENEDOR MAESTRO
                 await CreateDatabaseInsideMasterAsync(
                     masterContainer,
                     databaseName,
@@ -91,7 +82,6 @@ namespace CrudCloudDb.Infrastructure.Services
 
                 _logger.LogInformation($"✅ Database {databaseName} created inside master container");
 
-                // 4. CREAR INSTANCIA EN BD
                 var dbInstance = new DatabaseInstance
                 {
                     Id = Guid.NewGuid(),
@@ -115,7 +105,6 @@ namespace CrudCloudDb.Infrastructure.Services
 
                 _logger.LogInformation($"🎉 Database {engine}/{databaseName} ready on port {masterContainer.Port}");
 
-                // 5. ENVIAR EMAIL
                 await _emailService.SendDatabaseCreatedEmailAsync(new DatabaseCreatedEmailDto
                 {
                     UserEmail = user.Email,
@@ -138,9 +127,6 @@ namespace CrudCloudDb.Infrastructure.Services
             }
         }
 
-        /// <summary>
-        /// Elimina una base de datos del contenedor maestro
-        /// </summary>
         public async Task<bool> DeleteDatabaseAsync(DatabaseInstance dbInstance, User user)
         {
             try
@@ -155,14 +141,12 @@ namespace CrudCloudDb.Infrastructure.Services
                     return false;
                 }
 
-                // Eliminar base de datos dentro del contenedor maestro
                 await DeleteDatabaseInsideMasterAsync(
                     masterContainer,
                     dbInstance.DatabaseName,
                     dbInstance.Username,
                     dbInstance.Engine);
 
-                // Enviar email de confirmación
                 await _emailService.SendDatabaseDeletedEmailAsync(new DatabaseDeletedEmailDto
                 {
                     UserEmail = user.Email,
@@ -182,9 +166,6 @@ namespace CrudCloudDb.Infrastructure.Services
             }
         }
 
-        /// <summary>
-        /// Resetea la contraseña de una base de datos
-        /// </summary>
         public async Task<PasswordResetResult> ResetDatabasePasswordAsync(
             DatabaseInstance dbInstance,
             User user)
@@ -198,29 +179,20 @@ namespace CrudCloudDb.Infrastructure.Services
                 if (masterContainer == null)
                     throw new Exception("Master container not found");
 
-                // Generar nueva contraseña
                 var newCredentials = await _credentialService.GenerateCredentialsAsync();
 
-                // Cambiar password en el contenedor maestro
                 await ResetPasswordInsideMasterAsync(
                     masterContainer,
                     dbInstance.Username,
                     newCredentials.Password,
                     dbInstance.Engine);
 
-                // Construir nuevo connection string
                 var newConnectionString = BuildConnectionString(
                     dbInstance.Engine,
                     masterContainer.Port,
                     dbInstance.DatabaseName,
-                    new CredentialResult
-                    {
-                        Username = dbInstance.Username,
-                        Password = newCredentials.Password,
-                        PasswordHash = newCredentials.PasswordHash
-                    });
+                    newCredentials);
 
-                // Enviar email
                 await _emailService.SendPasswordResetEmailAsync(new PasswordResetEmailDto
                 {
                     UserEmail = user.Email,
@@ -297,7 +269,6 @@ namespace CrudCloudDb.Infrastructure.Services
 
         public Task<bool> RemoveContainerAsync(string containerId)
         {
-            // ⚠️ Ya no eliminamos contenedores (son compartidos)
             _logger.LogWarning("⚠️ RemoveContainerAsync called but containers are shared - ignoring");
             return Task.FromResult(true);
         }
@@ -328,16 +299,13 @@ namespace CrudCloudDb.Infrastructure.Services
         }
 
         // ============================================
-        // MÉTODOS PRIVADOS: Operaciones SQL
+        // MÉTODOS PRIVADOS
         // ============================================
 
-        /// <summary>
-        /// Crea una base de datos y usuario dentro del contenedor maestro
-        /// </summary>
         private async Task CreateDatabaseInsideMasterAsync(
             MasterContainerInfo masterContainer,
             string databaseName,
-            CredentialResult credentials,
+            CredentialsResult credentials,
             DatabaseEngine engine)
         {
             switch (engine)
@@ -359,51 +327,42 @@ namespace CrudCloudDb.Infrastructure.Services
             }
         }
 
-        /// <summary>
-        /// Crea base de datos PostgreSQL con seguridad
-        /// </summary>
         private async Task CreatePostgreSQLDatabaseAsync(
             MasterContainerInfo master,
             string dbName,
-            CredentialResult credentials)
+            CredentialsResult credentials)
         {
             var connString = $"Host={master.Host};Port={master.Port};Database=postgres;Username={master.AdminUsername};Password={master.AdminPassword}";
             
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
-            // 1. Crear usuario
             await using (var cmd = new NpgsqlCommand(
                 $"CREATE USER {credentials.Username} WITH PASSWORD '{credentials.Password}'", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // 2. Crear base de datos (owner es el admin, NO el usuario)
             await using (var cmd = new NpgsqlCommand(
                 $"CREATE DATABASE {dbName} OWNER {master.AdminUsername}", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // 3. Dar permisos de conexión y uso al usuario
             await using (var cmd = new NpgsqlCommand(
                 $"GRANT CONNECT ON DATABASE {dbName} TO {credentials.Username}", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // 4. Conectar a la base de datos nueva
             await conn.ChangeDatabaseAsync(dbName);
 
-            // 5. Dar permisos sobre el esquema public
             await using (var cmd = new NpgsqlCommand(
                 $"GRANT ALL PRIVILEGES ON SCHEMA public TO {credentials.Username}", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // 6. Dar permisos sobre tablas futuras
             await using (var cmd = new NpgsqlCommand(
                 $"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO {credentials.Username}", conn))
             {
@@ -413,40 +372,33 @@ namespace CrudCloudDb.Infrastructure.Services
             _logger.LogInformation($"✅ PostgreSQL database {dbName} created with secure permissions");
         }
 
-        /// <summary>
-        /// Crea base de datos MySQL con seguridad
-        /// </summary>
         private async Task CreateMySQLDatabaseAsync(
             MasterContainerInfo master,
             string dbName,
-            CredentialResult credentials)
+            CredentialsResult credentials)
         {
             var connString = $"Server={master.Host};Port={master.Port};User={master.AdminUsername};Password={master.AdminPassword}";
             
             await using var conn = new MySqlConnection(connString);
             await conn.OpenAsync();
 
-            // 1. Crear base de datos
             await using (var cmd = new MySqlCommand($"CREATE DATABASE {dbName}", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // 2. Crear usuario
             await using (var cmd = new MySqlCommand(
                 $"CREATE USER '{credentials.Username}'@'%' IDENTIFIED BY '{credentials.Password}'", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // 3. Dar permisos SOLO sobre su base de datos
             await using (var cmd = new MySqlCommand(
                 $"GRANT ALL PRIVILEGES ON {dbName}.* TO '{credentials.Username}'@'%'", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // 4. Aplicar cambios
             await using (var cmd = new MySqlCommand("FLUSH PRIVILEGES", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
@@ -455,20 +407,16 @@ namespace CrudCloudDb.Infrastructure.Services
             _logger.LogInformation($"✅ MySQL database {dbName} created with secure permissions");
         }
 
-        /// <summary>
-        /// Crea base de datos MongoDB con seguridad
-        /// </summary>
         private async Task CreateMongoDBDatabaseAsync(
             MasterContainerInfo master,
             string dbName,
-            CredentialResult credentials)
+            CredentialsResult credentials)
         {
             var connString = $"mongodb://{master.AdminUsername}:{master.AdminPassword}@{master.Host}:{master.Port}/admin";
             
             var client = new MongoClient(connString);
             var adminDb = client.GetDatabase("admin");
 
-            // Crear usuario con acceso SOLO a su base de datos
             var command = new MongoDB.Bson.BsonDocument
             {
                 { "createUser", credentials.Username },
@@ -489,9 +437,6 @@ namespace CrudCloudDb.Infrastructure.Services
             _logger.LogInformation($"✅ MongoDB database {dbName} created with secure permissions");
         }
 
-        /// <summary>
-        /// Elimina base de datos y usuario del contenedor maestro
-        /// </summary>
         private async Task DeleteDatabaseInsideMasterAsync(
             MasterContainerInfo master,
             string dbName,
@@ -524,20 +469,17 @@ namespace CrudCloudDb.Infrastructure.Services
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
-            // Terminar conexiones activas
             await using (var cmd = new NpgsqlCommand(
                 $"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{dbName}'", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // Eliminar base de datos
             await using (var cmd = new NpgsqlCommand($"DROP DATABASE IF EXISTS {dbName}", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // Eliminar usuario
             await using (var cmd = new NpgsqlCommand($"DROP USER IF EXISTS {username}", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
@@ -556,13 +498,11 @@ namespace CrudCloudDb.Infrastructure.Services
             await using var conn = new MySqlConnection(connString);
             await conn.OpenAsync();
 
-            // Eliminar base de datos
             await using (var cmd = new MySqlCommand($"DROP DATABASE IF EXISTS {dbName}", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // Eliminar usuario
             await using (var cmd = new MySqlCommand($"DROP USER IF EXISTS '{username}'@'%'", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
@@ -585,10 +525,8 @@ namespace CrudCloudDb.Infrastructure.Services
             
             var client = new MongoClient(connString);
             
-            // Eliminar base de datos
             await client.DropDatabaseAsync(dbName);
 
-            // Eliminar usuario
             var adminDb = client.GetDatabase("admin");
             var command = new MongoDB.Bson.BsonDocument
             {
@@ -599,9 +537,6 @@ namespace CrudCloudDb.Infrastructure.Services
             _logger.LogInformation($"✅ MongoDB database {dbName} deleted");
         }
 
-        /// <summary>
-        /// Resetea password de usuario en contenedor maestro
-        /// </summary>
         private async Task ResetPasswordInsideMasterAsync(
             MasterContainerInfo master,
             string username,
@@ -690,7 +625,7 @@ namespace CrudCloudDb.Infrastructure.Services
             DatabaseEngine engine,
             int port,
             string dbName,
-            CredentialResult credentials)
+            CredentialsResult credentials)
         {
             return engine switch
             {
