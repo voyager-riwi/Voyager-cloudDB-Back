@@ -140,7 +140,7 @@ namespace CrudCloudDb.Infrastructure.Services
                             ContainerId = masterContainer.ID,
                             Engine = engine,
                             Port = GetPortForEngine(engine),
-                            Host = "localhost",
+                            Host = "172.17.0.1",
                             AdminUsername = adminUser,
                             AdminPassword = adminPassword,
                             IsRunning = isRunning
@@ -206,7 +206,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 ContainerId = container.ID,
                 Engine = engine,
                 Port = port,
-                Host = "localhost",
+                Host = "172.17.0.1",
                 AdminUsername = adminUser,
                 AdminPassword = adminPassword,
                 IsRunning = true
