@@ -20,14 +20,14 @@ namespace CrudCloudDb.Infrastructure.Services
         private readonly ICredentialService _credentialService;
         private readonly IEmailService _emailService;
         private readonly ILogger<DockerService> _logger;
-        private readonly IConfiguration _configuration; 
+        private readonly IConfiguration _configuration;
 
         public DockerService(
             IMasterContainerService masterContainerService,
             ICredentialService credentialService,
             IEmailService emailService,
             ILogger<DockerService> logger,
-            IConfiguration configuration) 
+            IConfiguration configuration)
         {
             _masterContainerService = masterContainerService;
             _credentialService = credentialService;
@@ -99,9 +99,9 @@ namespace CrudCloudDb.Infrastructure.Services
                     PasswordHash = credentials.PasswordHash,
                     Status = DatabaseStatus.Running,
                     ConnectionString = BuildConnectionString(
-                        engine, 
-                        masterContainer.Port, 
-                        databaseName, 
+                        engine,
+                        masterContainer.Port,
+                        databaseName,
                         credentials),
                     CredentialsViewed = false,
                     CreatedAt = DateTime.UtcNow
@@ -138,7 +138,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 _logger.LogInformation($"🗑️ Deleting database {dbInstance.Name}");
 
                 var masterContainer = await _masterContainerService.GetMasterContainerInfoAsync(dbInstance.Engine);
-                
+
                 if (masterContainer == null)
                 {
                     _logger.LogWarning($"⚠️ Master container not found for {dbInstance.Engine}");
@@ -179,7 +179,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 _logger.LogInformation($"🔑 Resetting password for database {dbInstance.Name}");
 
                 var masterContainer = await _masterContainerService.GetMasterContainerInfoAsync(dbInstance.Engine);
-                
+
                 if (masterContainer == null)
                     throw new Exception("Master container not found");
 
@@ -281,7 +281,7 @@ namespace CrudCloudDb.Infrastructure.Services
         {
             try
             {
-                #pragma warning disable CS0618
+#pragma warning disable CS0618
                 var logStream = await _dockerClient.Containers.GetContainerLogsAsync(
                     containerId,
                     new ContainerLogsParameters
@@ -290,7 +290,7 @@ namespace CrudCloudDb.Infrastructure.Services
                         ShowStderr = true,
                         Tail = lines.ToString()
                     });
-                #pragma warning restore CS0618
+#pragma warning restore CS0618
 
                 using var reader = new StreamReader(logStream);
                 return await reader.ReadToEndAsync();
@@ -317,15 +317,15 @@ namespace CrudCloudDb.Infrastructure.Services
                 case DatabaseEngine.PostgreSQL:
                     await CreatePostgreSQLDatabaseAsync(masterContainer, databaseName, credentials);
                     break;
-                
+
                 case DatabaseEngine.MySQL:
                     await CreateMySQLDatabaseAsync(masterContainer, databaseName, credentials);
                     break;
-                
+
                 case DatabaseEngine.MongoDB:
                     await CreateMongoDBDatabaseAsync(masterContainer, databaseName, credentials);
                     break;
-                
+
                 default:
                     throw new NotSupportedException($"Engine {engine} not supported");
             }
@@ -337,38 +337,49 @@ namespace CrudCloudDb.Infrastructure.Services
             CredentialsResult credentials)
         {
             var connString = $"Host={master.Host};Port={master.Port};Database=postgres;Username={master.AdminUsername};Password={master.AdminPassword}";
-            
+
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
+            // Crear usuario
             await using (var cmd = new NpgsqlCommand(
                 $"CREATE USER {credentials.Username} WITH PASSWORD '{credentials.Password}'", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
+            // Crear base de datos
             await using (var cmd = new NpgsqlCommand(
                 $"CREATE DATABASE {dbName} OWNER {master.AdminUsername}", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
+            // Dar permiso CONNECT
             await using (var cmd = new NpgsqlCommand(
                 $"GRANT CONNECT ON DATABASE {dbName} TO {credentials.Username}", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            await conn.ChangeDatabaseAsync(dbName);
+            // Cerrar conexión a postgres
+            await conn.CloseAsync();
 
+            // Abrir nueva conexión a la base de datos recién creada
+            var newConnString = $"Host={master.Host};Port={master.Port};Database={dbName};Username={master.AdminUsername};Password={master.AdminPassword}";
+            await using var newConn = new NpgsqlConnection(newConnString);
+            await newConn.OpenAsync();
+
+            // Dar privilegios en el schema public
             await using (var cmd = new NpgsqlCommand(
-                $"GRANT ALL PRIVILEGES ON SCHEMA public TO {credentials.Username}", conn))
+                $"GRANT ALL PRIVILEGES ON SCHEMA public TO {credentials.Username}", newConn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
+            // Dar privilegios por defecto en tablas futuras
             await using (var cmd = new NpgsqlCommand(
-                $"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO {credentials.Username}", conn))
+                $"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO {credentials.Username}", newConn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
@@ -382,7 +393,7 @@ namespace CrudCloudDb.Infrastructure.Services
             CredentialsResult credentials)
         {
             var connString = $"Server={master.Host};Port={master.Port};User={master.AdminUsername};Password={master.AdminPassword}";
-            
+
             await using var conn = new MySqlConnection(connString);
             await conn.OpenAsync();
 
@@ -417,7 +428,7 @@ namespace CrudCloudDb.Infrastructure.Services
             CredentialsResult credentials)
         {
             var connString = $"mongodb://{master.AdminUsername}:{master.AdminPassword}@{master.Host}:{master.Port}/admin";
-            
+
             var client = new MongoClient(connString);
             var adminDb = client.GetDatabase("admin");
 
@@ -452,11 +463,11 @@ namespace CrudCloudDb.Infrastructure.Services
                 case DatabaseEngine.PostgreSQL:
                     await DeletePostgreSQLDatabaseAsync(master, dbName, username);
                     break;
-                
+
                 case DatabaseEngine.MySQL:
                     await DeleteMySQLDatabaseAsync(master, dbName, username);
                     break;
-                
+
                 case DatabaseEngine.MongoDB:
                     await DeleteMongoDBDatabaseAsync(master, dbName, username);
                     break;
@@ -469,7 +480,7 @@ namespace CrudCloudDb.Infrastructure.Services
             string username)
         {
             var connString = $"Host={master.Host};Port={master.Port};Database=postgres;Username={master.AdminUsername};Password={master.AdminPassword}";
-            
+
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
@@ -498,7 +509,7 @@ namespace CrudCloudDb.Infrastructure.Services
             string username)
         {
             var connString = $"Server={master.Host};Port={master.Port};User={master.AdminUsername};Password={master.AdminPassword}";
-            
+
             await using var conn = new MySqlConnection(connString);
             await conn.OpenAsync();
 
@@ -526,9 +537,9 @@ namespace CrudCloudDb.Infrastructure.Services
             string username)
         {
             var connString = $"mongodb://{master.AdminUsername}:{master.AdminPassword}@{master.Host}:{master.Port}/admin";
-            
+
             var client = new MongoClient(connString);
-            
+
             await client.DropDatabaseAsync(dbName);
 
             var adminDb = client.GetDatabase("admin");
@@ -552,11 +563,11 @@ namespace CrudCloudDb.Infrastructure.Services
                 case DatabaseEngine.PostgreSQL:
                     await ResetPostgreSQLPasswordAsync(master, username, newPassword);
                     break;
-                
+
                 case DatabaseEngine.MySQL:
                     await ResetMySQLPasswordAsync(master, username, newPassword);
                     break;
-                
+
                 case DatabaseEngine.MongoDB:
                     await ResetMongoDBPasswordAsync(master, username, newPassword);
                     break;
@@ -569,7 +580,7 @@ namespace CrudCloudDb.Infrastructure.Services
             string newPassword)
         {
             var connString = $"Host={master.Host};Port={master.Port};Database=postgres;Username={master.AdminUsername};Password={master.AdminPassword}";
-            
+
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
@@ -586,7 +597,7 @@ namespace CrudCloudDb.Infrastructure.Services
             string newPassword)
         {
             var connString = $"Server={master.Host};Port={master.Port};User={master.AdminUsername};Password={master.AdminPassword}";
-            
+
             await using var conn = new MySqlConnection(connString);
             await conn.OpenAsync();
 
@@ -610,7 +621,7 @@ namespace CrudCloudDb.Infrastructure.Services
             string newPassword)
         {
             var connString = $"mongodb://{master.AdminUsername}:{master.AdminPassword}@{master.Host}:{master.Port}/admin";
-            
+
             var client = new MongoClient(connString);
             var adminDb = client.GetDatabase("admin");
 
@@ -631,15 +642,17 @@ namespace CrudCloudDb.Infrastructure.Services
             string dbName,
             CredentialsResult credentials)
         {
-            // ⭐ OBTENER HOST DESDE CONFIGURACIÓN
+            // Obtener host desde configuración
             var engineName = engine.ToString();
             var host = _configuration[$"DatabaseHosts:{engineName}"];
-    
+
             if (string.IsNullOrEmpty(host))
             {
                 _logger.LogWarning($"⚠️ Host not configured for {engineName}, using localhost");
                 host = "localhost";
             }
+
+            _logger.LogInformation($"🌐 Building connection string with host: {host}");
 
             return engine switch
             {
