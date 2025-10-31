@@ -1,4 +1,5 @@
-﻿using CrudCloudDb.Application.Interfaces.Repositories;
+﻿using CrudCloudDb.Application.DTOs.User;
+using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Core.Entities;
 using CrudCloudDb.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -36,5 +37,20 @@ public class UserRepository : IUserRepository
     public async Task<bool> IsEmailTakenAsync(string email)
     {
         return await _context.Users.AnyAsync(u => u.Email == email);
+    }
+
+    public async Task<User?> GetByPasswordResetTokenAsync(string token)
+    {
+        return await _context.Users.FirstOrDefaultAsync(u => u.PasswordResetToken == token);
+    }
+    public async Task UpdateAsync(User user)
+    {
+        _context.Users.Update(user);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<User?> GetByIdWithPlanAsync(Guid id)
+    {
+        return await _context.Users.Include(u => u.CurrentPlan).FirstOrDefaultAsync(u => u.Id == id);
     }
 }

@@ -179,7 +179,28 @@ namespace CrudCloudDb.Infrastructure.Services
                 throw;
             }
         }
+        
+        // =========================================================
+        // 6️⃣ EMAIL: PASSWORD RESET DE CUENTA DE USUARIO (NUEVO)
+        // =========================================================
+        public async Task SendAccountPasswordResetEmailAsync(AccountPasswordResetEmailDto emailDto)
+        {
+       
+            try
+            {
+                _logger.LogInformation($"Sending account password reset email to {emailDto.ToEmail}");
+                var subject = "Tu codigo de recuperacion de contraseña";
+                var body = BuildAccountPasswordResetEmailBody(emailDto);
 
+                await SendEmailAsync(emailDto.ToEmail, subject, body, EmailType.AccountPasswordReset);
+                _logger.LogInformation($"✅ Account password reset email sent to {emailDto.ToEmail}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error sending account password reset email to {emailDto.ToEmail}");
+            }
+        }
+        
         // ============================================
         // MÉTODO PRIVADO: ENVIAR EMAIL CON MAILKIT
         // ============================================
@@ -504,6 +525,7 @@ namespace CrudCloudDb.Infrastructure.Services
 </body>
 </html>";
         }
+        
 
         private string BuildPasswordResetEmailBody(PasswordResetEmailDto dto)
         {
@@ -566,6 +588,54 @@ namespace CrudCloudDb.Infrastructure.Services
         <div class='footer'>
             <p>Este es un email automático, por favor no respondas a este mensaje.</p>
             <p>&copy; 2024 PotterCloud. Todos los derechos reservados.</p>
+        </div>
+    </div>
+</body>
+</html>";
+        }
+        
+        
+        private string BuildAccountPasswordResetEmailBody(AccountPasswordResetEmailDto dto)
+        {
+            return $@"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <style>
+        body {{ font-family: Arial, sans-serif;; margin: 0; padding: 20px; }}
+        .container {{ max-width: 600px; margin: 0 auto; background-color: white; border-radius: 10px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        .header {{ text-align: center; margin-bottom: 30px; }}
+        .header h1 {{ color: #4F46E5; margin: 0; }}
+        .content {{ line-height: 1.6; color: #333; }}
+        .code-container {{ background-color: #F3F4F6; text-align: center; padding: 20px; border-radius: 5px; margin: 20px 0; }}
+        .code {{ font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #4F46E5; }}
+        .footer {{ text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #E5E7EB; color: #6B7280; font-size: 12px; }}
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <div class='header'>
+            <h1>Código de Recuperación</h1>
+        </div>
+        
+        <div class='content'>
+            <p>Hola <strong>{dto.Username}</strong>,</p>
+            
+            <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta. Ingresa el siguiente código en la página de recuperación:</p>
+            
+            <div class='code-container'>
+                <span class='code'>{dto.ResetToken}</span>
+            </div>
+            
+            <p>Este código es válido por 15 minutos. Si no solicitaste este cambio, puedes ignorar este correo de forma segura.</p>
+            
+            <p>Saludos,<br><strong>Equipo de PotterCloud</strong></p>
+        </div>
+        
+        <div class='footer'>
+            <p>Este es un email automático, por favor no respondas a este mensaje.</p>
+            <p>&copy; 2025 PotterCloud. Todos los derechos reservados.</p>
         </div>
     </div>
 </body>

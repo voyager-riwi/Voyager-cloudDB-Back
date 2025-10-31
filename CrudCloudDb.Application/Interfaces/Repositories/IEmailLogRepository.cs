@@ -11,5 +11,7 @@ namespace CrudCloudDb.Application.Interfaces.Repositories
         Task<EmailLog?> GetByIdAsync(Guid id);
         Task<IEnumerable<EmailLog>> GetByEmailAsync(string email);
         Task<IEnumerable<EmailLog>> GetRecentAsync(int count = 100);
+        
+       
     }
 }
