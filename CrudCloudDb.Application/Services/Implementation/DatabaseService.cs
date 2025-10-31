@@ -73,18 +73,22 @@ namespace CrudCloudDb.Application.Services.Implementation
         }
 
         /// <summary>
-        /// Obtiene todas las bases de datos de un usuario
+        /// Obtiene todas las bases de datos ACTIVAS de un usuario (excluye las eliminadas)
         /// </summary>
         public async Task<List<DatabaseResponseDto>> GetUserDatabasesAsync(Guid userId)
         {
             _logger.LogInformation($"📋 Getting databases for user {userId}");
 
             var databases = await _databaseRepository.GetByUserIdAsync(userId);
-            var databasesList = databases.ToList();
 
-            _logger.LogInformation($"✅ Found {databasesList.Count} databases for user {userId}");
+            // 🔒 FILTRAR: Solo mostrar bases de datos NO eliminadas
+            var activeDatabases = databases
+                .Where(db => db.Status != DatabaseStatus.Deleted)
+                .ToList();
 
-            return databasesList.Select(db => MapToDto(db, checkRunning: false)).ToList();
+            _logger.LogInformation($"✅ Found {activeDatabases.Count} active databases for user {userId}");
+
+            return activeDatabases.Select(db => MapToDto(db, checkRunning: false)).ToList();
         }
 
         /// <summary>
@@ -129,11 +133,11 @@ namespace CrudCloudDb.Application.Services.Implementation
         }
 
         /// <summary>
-        /// Elimina una base de datos permanentemente
+        /// Marca una base de datos como eliminada (SOFT DELETE - 30 días de gracia)
         /// </summary>
         public async Task<bool> DeleteDatabaseAsync(Guid userId, Guid databaseId)
         {
-            _logger.LogInformation($"🗑️ Deleting database {databaseId} for user {userId}");
+            _logger.LogInformation($"🗑️ Soft deleting database {databaseId} for user {userId}");
 
             var database = await _databaseRepository.GetByIdAsync(databaseId);
 
@@ -151,15 +155,24 @@ namespace CrudCloudDb.Application.Services.Implementation
 
             var user = await _userRepository.GetByIdAsync(userId);
 
-            // Eliminar contenedor Docker
-            _logger.LogInformation($"🐳 Deleting Docker container {database.ContainerId}");
-            await _dockerService.DeleteDatabaseAsync(database, user);
+            // ⭐ SOFT DELETE: Solo marcar como eliminada, NO eliminar físicamente
+            database.Status = DatabaseStatus.Deleted;
+            database.DeletedAt = DateTime.UtcNow;
 
-            // Eliminar de BD
-            _logger.LogInformation($"💾 Deleting database from repository");
-            await _databaseRepository.DeleteAsync(databaseId);
+            _logger.LogInformation($"💾 Marking database as deleted (30 days grace period)");
+            await _databaseRepository.UpdateAsync(database);
 
-            _logger.LogInformation($"✅ Database {database.Name} deleted successfully");
+            // Enviar email de confirmación con información del período de gracia
+            await _emailService.SendDatabaseDeletedEmailAsync(new DatabaseDeleteEmailDto
+            {
+                UserEmail = user.Email,
+                UserName = user.Email.Split('@')[0],
+                DatabaseName = database.DatabaseName,
+                Engine = database.Engine.ToString(),
+                DeletedAt = DateTime.UtcNow
+            });
+
+            _logger.LogInformation($"✅ Database {database.Name} marked as deleted (soft delete, will be permanently deleted after 30 days)");
 
             return true;
         }
@@ -207,67 +220,50 @@ namespace CrudCloudDb.Application.Services.Implementation
         }
 
         /// <summary>
-        /// Inicia un contenedor detenido
+        /// Restaura una base de datos marcada como eliminada (dentro del período de gracia de 30 días)
         /// </summary>
-        public async Task<bool> StartDatabaseAsync(Guid userId, Guid databaseId)
+        public async Task<bool> RestoreDatabaseAsync(Guid userId, Guid databaseId)
         {
-            _logger.LogInformation($"▶️ Starting database {databaseId}");
+            _logger.LogInformation($"♻️ Restoring database {databaseId} for user {userId}");
 
             var database = await _databaseRepository.GetByIdAsync(databaseId);
 
-            if (database == null || database.UserId != userId)
+            if (database == null)
             {
-                _logger.LogWarning($"⚠️ Database {databaseId} not found or access denied");
+                _logger.LogWarning($"⚠️ Database {databaseId} not found");
                 return false;
             }
 
-            var started = await _dockerService.StartContainerAsync(database.ContainerId);
-
-            if (started)
+            if (database.UserId != userId)
             {
-                _logger.LogInformation($"🔄 Updating database {databaseId} status to Running");
-                database.Status = DatabaseStatus.Running;
-                await _databaseRepository.UpdateAsync(database);
-                _logger.LogInformation($"✅ Database {database.Name} started successfully");
-            }
-            else
-            {
-                _logger.LogError($"❌ Failed to start database {databaseId}");
+                _logger.LogWarning($"⚠️ User {userId} tried to restore database {databaseId} owned by another user");
+                throw new UnauthorizedAccessException("You don't have access to this database");
             }
 
-            return started;
-        }
-
-        /// <summary>
-        /// Detiene un contenedor en ejecución
-        /// </summary>
-        public async Task<bool> StopDatabaseAsync(Guid userId, Guid databaseId)
-        {
-            _logger.LogInformation($"⏸️ Stopping database {databaseId}");
-
-            var database = await _databaseRepository.GetByIdAsync(databaseId);
-
-            if (database == null || database.UserId != userId)
+            if (database.Status != DatabaseStatus.Deleted)
             {
-                _logger.LogWarning($"⚠️ Database {databaseId} not found or access denied");
+                _logger.LogWarning($"⚠️ Database {databaseId} is not deleted, cannot restore");
                 return false;
             }
 
-            var stopped = await _dockerService.StopContainerAsync(database.ContainerId);
-
-            if (stopped)
+            // Verificar que no hayan pasado más de 30 días
+            if (database.DeletedAt.HasValue &&
+                (DateTime.UtcNow - database.DeletedAt.Value).TotalDays > 30)
             {
-                _logger.LogInformation($"🔄 Updating database {databaseId} status to Stopped");
-                database.Status = DatabaseStatus.Stopped;
-                await _databaseRepository.UpdateAsync(database);
-                _logger.LogInformation($"✅ Database {database.Name} stopped successfully");
-            }
-            else
-            {
-                _logger.LogError($"❌ Failed to stop database {databaseId}");
+                _logger.LogWarning($"⚠️ Cannot restore database {databaseId}: grace period expired (more than 30 days)");
+                throw new InvalidOperationException("Cannot restore database: grace period expired (more than 30 days). The database will be permanently deleted soon.");
             }
 
-            return stopped;
+            // Restaurar la base de datos
+            database.Status = DatabaseStatus.Running;
+            database.DeletedAt = null;
+
+            _logger.LogInformation($"💾 Restoring database status to Running");
+            await _databaseRepository.UpdateAsync(database);
+
+            _logger.LogInformation($"✅ Database {database.Name} restored successfully");
+
+            return true;
         }
 
         // ============================================

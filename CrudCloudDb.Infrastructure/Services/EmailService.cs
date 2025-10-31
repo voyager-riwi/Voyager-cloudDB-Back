@@ -468,7 +468,8 @@ namespace CrudCloudDb.Infrastructure.Services
         private string BuildDatabaseDeletedEmailBody(DatabaseDeletedEmailDto dto)
         {
             var localTime = ConvertToLocalTime(dto.DeletedAt);
-            
+            var permanentDeletionDate = localTime.AddDays(30);
+
             return $@"
 <!DOCTYPE html>
 <html>
@@ -478,39 +479,54 @@ namespace CrudCloudDb.Infrastructure.Services
         body {{ font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px; }}
         .container {{ max-width: 600px; margin: 0 auto; background-color: white; border-radius: 10px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
         .header {{ text-align: center; margin-bottom: 30px; }}
-        .header h1 {{ color: #EF4444; margin: 0; }}
+        .header h1 {{ color: #F59E0B; margin: 0; }}
         .content {{ line-height: 1.6; color: #333; }}
-        .info {{ background-color: #FEE2E2; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+        .info {{ background-color: #FEF3C7; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #F59E0B; }}
+        .warning {{ background-color: #FEE2E2; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #EF4444; }}
+        .restore-btn {{ display: inline-block; background-color: #10B981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 15px 0; font-weight: bold; }}
         .footer {{ text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #E5E7EB; color: #6B7280; font-size: 12px; }}
     </style>
 </head>
 <body>
     <div class='container'>
         <div class='header'>
-            <h1>🗑️ Base de datos eliminada</h1>
+            <h1>⚠️ Base de datos marcada para eliminación</h1>
         </div>
-        
+
         <div class='content'>
             <p>Hola <strong>{dto.UserName}</strong>,</p>
-            
-            <p>Tu base de datos <strong>{dto.DatabaseName}</strong> ({dto.Engine}) ha sido eliminada permanentemente.</p>
-            
+
+            <p>Tu base de datos <strong>{dto.DatabaseName}</strong> ({dto.Engine}) ha sido marcada para eliminación.</p>
+
             <div class='info'>
+                <p><strong>⏰ PERÍODO DE GRACIA:</strong> Tienes <strong>30 días</strong> para restaurar esta base de datos desde tu panel de control.</p>
                 <p><strong>Base de datos:</strong> {dto.DatabaseName}</p>
                 <p><strong>Motor:</strong> {dto.Engine}</p>
                 <p><strong>Fecha de eliminación:</strong> {localTime:dd/MM/yyyy HH:mm}</p>
+                <p><strong>Eliminación permanente:</strong> {permanentDeletionDate:dd/MM/yyyy HH:mm}</p>
             </div>
-            
-            <p>⚠️ Esta acción es irreversible. Todos los datos han sido eliminados permanentemente.</p>
-            
-            <p>Si eliminaste esta base de datos por error, por favor contacta a soporte inmediatamente.</p>
-            
+
+            <div class='warning'>
+                <p><strong>⚠️ IMPORTANTE:</strong></p>
+                <p>• Durante los próximos 30 días, puedes restaurar tu base de datos en cualquier momento.</p>
+                <p>• Después del <strong>{permanentDeletionDate:dd/MM/yyyy}</strong>, todos los datos serán eliminados <strong>permanentemente</strong> y no podrán ser recuperados.</p>
+                <p>• La base de datos ya no aparecerá en tu panel, pero puedes contactar a soporte para restaurarla.</p>
+            </div>
+
+            <p>Si eliminaste esta base de datos por error, ingresa a tu panel de control y restaura la base de datos antes de la fecha límite.</p>
+
+            <p style='text-align: center;'>
+                <strong>¿Fue un error? Restaura tu base de datos ahora:</strong><br>
+                <a href='https://service.voyager.andrescortes.dev/databases' class='restore-btn'>🔄 Ir al Panel de Control</a>
+            </p>
+
             <p>Saludos,<br><strong>Equipo de PotterCloud</strong></p>
         </div>
-        
+
         <div class='footer'>
             <p>Este es un email automático, por favor no respondas a este mensaje.</p>
-            <p>&copy; 2024 PotterCloud. Todos los derechos reservados.</p>
+            <p>Si tienes preguntas, contacta a soporte.</p>
+            <p>&copy; 2025 PotterCloud. Todos los derechos reservados.</p>
         </div>
     </div>
 </body>

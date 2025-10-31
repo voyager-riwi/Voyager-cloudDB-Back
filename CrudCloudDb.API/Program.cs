@@ -10,6 +10,7 @@ using CrudCloudDb.Application.Services.Interfaces;
 using CrudCloudDb.Infrastructure.Data;
 using CrudCloudDb.Infrastructure.Services;
 using CrudCloudDb.Infrastructure.Repositories;
+using CrudCloudDb.Infrastructure.Jobs;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -93,6 +94,9 @@ builder.Services.AddScoped<IDatabaseService, DatabaseService>();
 builder.Services.AddScoped<IPortManagerService, PortManagerService>();
 builder.Services.AddScoped<ICredentialService, CredentialService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
+
+// Background Jobs
+builder.Services.AddHostedService<DatabaseCleanupJob>(); // 🧹 Limpieza automática de BDs eliminadas (30 días)
 
 // =======================
 // 8️⃣ Controllers Configuration
