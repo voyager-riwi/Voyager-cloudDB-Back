@@ -310,9 +310,47 @@ namespace CrudCloudDb.Infrastructure.Services
 </html>";
         }
 
-        private string BuildDatabaseCreatedEmailBody(DatabaseCreatedEmailDto dto)
+private string BuildDatabaseCreatedEmailBody(DatabaseCreatedEmailDto dto)
+{
+    // Determinar colores según el motor
+    var (primaryColor, bgColor, borderColor) = dto.Engine.ToLower() switch
+    {
+        "postgresql" => ("#3B82F6", "#EFF6FF", "#3B82F6"), // Azul
+        "mysql" => ("#F97316", "#FFF7ED", "#F97316"),      // Naranja
+        "mongodb" => ("#10B981", "#F0FDF4", "#10B981"),    // Verde
+        _ => ("#6B7280", "#F3F4F6", "#6B7280")             // Gris por defecto
+    };
+
+    // Extraer host real del connection string
+    var host = "91.98.42.248"; // Valor por defecto
+    if (!string.IsNullOrEmpty(dto.ConnectionString))
+    {
+        // Intentar extraer el host del connection string
+        if (dto.ConnectionString.Contains("Host="))
         {
-            return $@"
+            var hostPart = dto.ConnectionString.Split(';')
+                .FirstOrDefault(p => p.Trim().StartsWith("Host="));
+            if (hostPart != null)
+                host = hostPart.Split('=')[1].Trim();
+        }
+        else if (dto.ConnectionString.Contains("Server="))
+        {
+            var serverPart = dto.ConnectionString.Split(';')
+                .FirstOrDefault(p => p.Trim().StartsWith("Server="));
+            if (serverPart != null)
+                host = serverPart.Split('=')[1].Trim();
+        }
+        else if (dto.ConnectionString.Contains("@"))
+        {
+            // MongoDB: mongodb://user:pass@HOST:port/db
+            var atIndex = dto.ConnectionString.IndexOf("@");
+            var colonIndex = dto.ConnectionString.IndexOf(":", atIndex);
+            if (atIndex > 0 && colonIndex > atIndex)
+                host = dto.ConnectionString.Substring(atIndex + 1, colonIndex - atIndex - 1);
+        }
+    }
+
+    return $@"
 <!DOCTYPE html>
 <html>
 <head>
@@ -321,12 +359,12 @@ namespace CrudCloudDb.Infrastructure.Services
         body {{ font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px; }}
         .container {{ max-width: 600px; margin: 0 auto; background-color: white; border-radius: 10px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
         .header {{ text-align: center; margin-bottom: 30px; }}
-        .header h1 {{ color: #10B981; margin: 0; }}
+        .header h1 {{ color: {primaryColor}; margin: 0; }}
         .content {{ line-height: 1.6; color: #333; }}
-        .credentials {{ background-color: #F0FDF4; border-left: 4px solid #10B981; padding: 20px; margin: 20px 0; border-radius: 5px; }}
-        .credentials h3 {{ margin-top: 0; color: #10B981; }}
+        .credentials {{ background-color: {bgColor}; border-left: 4px solid {borderColor}; padding: 20px; margin: 20px 0; border-radius: 5px; }}
+        .credentials h3 {{ margin-top: 0; color: {primaryColor}; }}
         .credential-item {{ margin: 10px 0; }}
-        .credential-label {{ font-weight: bold; color: #059669; }}
+        .credential-label {{ font-weight: bold; color: {primaryColor}; }}
         .credential-value {{ font-family: 'Courier New', monospace; background-color: white; padding: 5px 10px; border-radius: 3px; display: inline-block; }}
         .warning {{ background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 15px; margin: 20px 0; border-radius: 5px; }}
         .footer {{ text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #E5E7EB; color: #6B7280; font-size: 12px; }}
@@ -347,7 +385,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 <h3>📋 Credenciales de acceso</h3>
                 
                 <div class='credential-item'>
-                    <span class='credential-label'>🗄️ Motor:</span>
+                    <span class='credential-label'>🗄️ Gestor:</span>
                     <span class='credential-value'>{dto.Engine}</span>
                 </div>
                 
@@ -368,7 +406,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 
                 <div class='credential-item'>
                     <span class='credential-label'>🌐 Host:</span>
-                    <span class='credential-value'>localhost</span>
+                    <span class='credential-value'>{host}</span>
                 </div>
                 
                 <div class='credential-item'>
@@ -388,7 +426,7 @@ namespace CrudCloudDb.Infrastructure.Services
             
             <p><strong>Fecha de creación:</strong> {dto.CreatedAt:dd/MM/yyyy HH:mm}</p>
             
-            <p>Puedes conectarte usando estas credenciales desde cualquier cliente de {dto.Engine} como DBeaver, pgAdmin, MySQL Workbench, etc.</p>
+            <p>Puedes conectarte usando estas credenciales desde cualquier cliente de {dto.Engine} como DBeaver, pgAdmin, MySQL Workbench, Compass, etc.</p>
             
             <p>Saludos,<br><strong>Equipo de PotterCloud</strong></p>
         </div>
@@ -400,7 +438,7 @@ namespace CrudCloudDb.Infrastructure.Services
     </div>
 </body>
 </html>";
-        }
+}
 
         private string BuildDatabaseDeletedEmailBody(DatabaseDeletedEmailDto dto)
         {
