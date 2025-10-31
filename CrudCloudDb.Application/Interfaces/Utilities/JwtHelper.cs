@@ -7,6 +7,8 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 
+
+// Archivo para la creacion del token
 namespace CrudCloudDb.Application.Utilities
 {
     public static class JwtHelper
@@ -29,6 +31,7 @@ namespace CrudCloudDb.Application.Utilities
             }
             
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
+            // sirve para hashear la clave y hacerla mas segura al momento de utilizarla.
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
             
             var expires = DateTime.UtcNow.AddMinutes(Convert.ToDouble(jwtSettings["ExpiryMinutes"]));

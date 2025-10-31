@@ -51,5 +51,17 @@ namespace CrudCloudDb.Application.Utilities
         {
             return charSet[RandomNumberGenerator.GetInt32(0, charSet.Length)];
         }
+        public static string GenerateNumericToken(int length = 6)
+        {
+            return string.Create(length, length, (span, state) =>
+            {
+                for (var i = 0; i < state; i++)
+                {
+                    span[i] = (char)('0' + RandomNumberGenerator.GetInt32(0, 10));
+                }
+            });
+        }
     }
+    
+    
 }
