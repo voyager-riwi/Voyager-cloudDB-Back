@@ -11,5 +11,10 @@ namespace CrudCloudDb.Application.Services.Interfaces
         /// Genera credenciales aleatorias seguras
         /// </summary>
         Task<CredentialsResult> GenerateCredentialsAsync();
+
+        /// <summary>
+        /// Genera un nombre aleatorio para base de datos
+        /// </summary>
+        string GenerateDatabaseName();
     }
 }

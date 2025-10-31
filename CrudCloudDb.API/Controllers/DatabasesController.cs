@@ -65,7 +65,7 @@ namespace CrudCloudDb.API.Controllers
         {
             try
             {
-                _logger.LogInformation($"📥 Create database request: {request.Engine} - {request.DatabaseName}");
+                _logger.LogInformation($"📥 Create database request: {request.Engine}");
                 
                 var userId = GetCurrentUserId();
                 var result = await _databaseService.CreateDatabaseAsync(userId, request);

@@ -4,7 +4,7 @@ using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Core.Entities;
 using CrudCloudDb.Core.Enums;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Configuration; // ⭐ NUEVA LÍNEA
+using Microsoft.Extensions.Configuration;
 
 namespace CrudCloudDb.Application.Services.Implementation
 {
@@ -17,20 +17,23 @@ namespace CrudCloudDb.Application.Services.Implementation
         private readonly IDatabaseInstanceRepository _databaseRepository;
         private readonly IUserRepository _userRepository;
         private readonly ILogger<DatabaseService> _logger;
-        private readonly IConfiguration _configuration; // ⭐ NUEVA LÍNEA
+        private readonly IConfiguration _configuration;
+        private readonly ICredentialService _credentialService; // ⭐ NUEVO
 
         public DatabaseService(
             IDockerService dockerService,
             IDatabaseInstanceRepository databaseRepository,
             IUserRepository userRepository,
             ILogger<DatabaseService> logger,
-            IConfiguration configuration) // ⭐ NUEVO PARÁMETRO
+            IConfiguration configuration,
+            ICredentialService credentialService) // ⭐ NUEVO PARÁMETRO
         {
             _dockerService = dockerService;
             _databaseRepository = databaseRepository;
             _userRepository = userRepository;
             _logger = logger;
-            _configuration = configuration; // ⭐ NUEVA LÍNEA
+            _configuration = configuration;
+            _credentialService = credentialService; // ⭐ NUEVO
         }
 
         /// <summary>
@@ -38,7 +41,7 @@ namespace CrudCloudDb.Application.Services.Implementation
         /// </summary>
         public async Task<DatabaseResponseDto> CreateDatabaseAsync(Guid userId, CreateDatabaseRequestDto request)
         {
-            _logger.LogInformation($"📥 Creating {request.Engine} database '{request.DatabaseName}' for user {userId}");
+            _logger.LogInformation($"📥 Creating {request.Engine} database for user {userId}");
 
             // 1. Obtener usuario
             var user = await _userRepository.GetByIdAsync(userId);
@@ -48,21 +51,24 @@ namespace CrudCloudDb.Application.Services.Implementation
                 throw new UnauthorizedAccessException("User not found");
             }
 
-            // 2. Crear base de datos con Docker
+            // 2. Generar nombre aleatorio para la base de datos
+            var databaseName = _credentialService.GenerateDatabaseName();
+            _logger.LogInformation($"🎲 Generated database name: {databaseName}");
+
+            // 3. Crear base de datos con Docker
             _logger.LogInformation($"🐳 Creating Docker container for {request.Engine}");
             var dbInstance = await _dockerService.CreateDatabaseContainerAsync(
                 user,
                 request.Engine,
-                request.DatabaseName
-            );
+                databaseName); // ⭐ Nombre generado automáticamente
 
-            // 3. Guardar en BD
+            // 4. Guardar en BD
             _logger.LogInformation($"💾 Saving database instance to repository");
             await _databaseRepository.CreateAsync(dbInstance);
 
             _logger.LogInformation($"✅ Database {dbInstance.Name} created successfully");
 
-            // 4. Mapear a DTO y devolver
+            // 5. Mapear a DTO y devolver
             return MapToDto(dbInstance, checkRunning: false);
         }
 
@@ -298,7 +304,7 @@ namespace CrudCloudDb.Application.Services.Implementation
                 Engine = db.Engine.ToString(),
                 Status = db.Status.ToString(),
                 Port = db.Port,
-                Host = GetDatabaseHost(db.Engine), // ⭐ CAMBIÓ DE "localhost" A GetDatabaseHost
+                Host = GetDatabaseHost(db.Engine),
                 Username = db.Username,
                 ConnectionString = db.ConnectionString,
                 CreatedAt = db.CreatedAt,

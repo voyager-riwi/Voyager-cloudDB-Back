@@ -29,6 +29,25 @@ namespace CrudCloudDb.Infrastructure.Services
             });
         }
 
+        public string GenerateDatabaseName()
+        {
+            const string letters = "abcdefghijklmnopqrstuvwxyz";
+            const string alphanumeric = "abcdefghijklmnopqrstuvwxyz0123456789";
+            
+            var result = new StringBuilder("db_"); // Prefijo "db_"
+            
+            // Primera letra
+            result.Append(letters[RandomNumberGenerator.GetInt32(letters.Length)]);
+            
+            // Resto: 15 caracteres aleatorios
+            for (int i = 0; i < 15; i++)
+            {
+                result.Append(alphanumeric[RandomNumberGenerator.GetInt32(alphanumeric.Length)]);
+            }
+
+            return result.ToString(); // Ejemplo: db_x7k9m2p4v8n1q6w3
+        }
+
         private string GenerateUsername()
         {
             const string letters = "abcdefghijklmnopqrstuvwxyz";
