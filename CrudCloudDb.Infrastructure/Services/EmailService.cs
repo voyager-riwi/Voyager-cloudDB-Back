@@ -25,6 +25,7 @@ namespace CrudCloudDb.Infrastructure.Services
         private readonly string _username;
         private readonly string _password;
         private readonly bool _enableSsl;
+        private readonly string _timeZoneId;
 
         public EmailService(
             IConfiguration configuration,
@@ -33,6 +34,9 @@ namespace CrudCloudDb.Infrastructure.Services
         {
             _emailLogRepository = emailLogRepository;
             _logger = logger;
+
+            // Configuración de zona horaria
+            _timeZoneId = configuration["TimeZoneSettings:TimeZoneId"] ?? "SA Pacific Standard Time";
 
             // ⭐ Sintaxis correcta con valores por defecto
             _smtpServer = configuration["EmailSettings:SmtpServer"]
@@ -60,6 +64,23 @@ namespace CrudCloudDb.Infrastructure.Services
             _enableSsl = !string.IsNullOrEmpty(enableSslString) 
                 ? bool.Parse(enableSslString) 
                 : true;
+        }
+
+        /// <summary>
+        /// Convierte UTC a la zona horaria configurada
+        /// </summary>
+        private DateTime ConvertToLocalTime(DateTime utcDateTime)
+        {
+            try
+            {
+                var timeZone = TimeZoneInfo.FindSystemTimeZoneById(_timeZoneId);
+                return TimeZoneInfo.ConvertTimeFromUtc(utcDateTime, timeZone);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, $"Error converting timezone, using UTC. TimeZoneId: {_timeZoneId}");
+                return utcDateTime;
+            }
         }
 
         // ============================================
@@ -255,6 +276,8 @@ namespace CrudCloudDb.Infrastructure.Services
 
         private string BuildAccountCreatedEmailBody(AccountCreatedEmailDto dto)
         {
+            var localTime = ConvertToLocalTime(dto.CreatedAt);
+            
             return $@"
 <!DOCTYPE html>
 <html>
@@ -282,7 +305,7 @@ namespace CrudCloudDb.Infrastructure.Services
             <p>¡Tu cuenta ha sido creada exitosamente! Estamos emocionados de tenerte con nosotros.</p>
             
             <div class='highlight'>
-                <p><strong>Fecha de registro:</strong> {dto.CreatedAt:dd/MM/yyyy HH:mm}</p>
+                <p><strong>Fecha de registro:</strong> {localTime:dd/MM/yyyy HH:mm}</p>
                 <p><strong>Email:</strong> {dto.UserEmail}</p>
             </div>
             
@@ -310,47 +333,49 @@ namespace CrudCloudDb.Infrastructure.Services
 </html>";
         }
 
-private string BuildDatabaseCreatedEmailBody(DatabaseCreatedEmailDto dto)
-{
-    // Determinar colores según el motor
-    var (primaryColor, bgColor, borderColor) = dto.Engine.ToLower() switch
-    {
-        "postgresql" => ("#3B82F6", "#EFF6FF", "#3B82F6"), // Azul
-        "mysql" => ("#F97316", "#FFF7ED", "#F97316"),      // Naranja
-        "mongodb" => ("#10B981", "#F0FDF4", "#10B981"),    // Verde
-        _ => ("#6B7280", "#F3F4F6", "#6B7280")             // Gris por defecto
-    };
+        private string BuildDatabaseCreatedEmailBody(DatabaseCreatedEmailDto dto)
+        {
+            var localTime = ConvertToLocalTime(dto.CreatedAt);
+            
+            // Determinar colores según el motor
+            var (primaryColor, bgColor, borderColor) = dto.Engine.ToLower() switch
+            {
+                "postgresql" => ("#3B82F6", "#EFF6FF", "#3B82F6"), // Azul
+                "mysql" => ("#F97316", "#FFF7ED", "#F97316"),      // Naranja
+                "mongodb" => ("#10B981", "#F0FDF4", "#10B981"),    // Verde
+                _ => ("#6B7280", "#F3F4F6", "#6B7280")             // Gris por defecto
+            };
 
-    // Extraer host real del connection string
-    var host = "91.98.42.248"; // Valor por defecto
-    if (!string.IsNullOrEmpty(dto.ConnectionString))
-    {
-        // Intentar extraer el host del connection string
-        if (dto.ConnectionString.Contains("Host="))
-        {
-            var hostPart = dto.ConnectionString.Split(';')
-                .FirstOrDefault(p => p.Trim().StartsWith("Host="));
-            if (hostPart != null)
-                host = hostPart.Split('=')[1].Trim();
-        }
-        else if (dto.ConnectionString.Contains("Server="))
-        {
-            var serverPart = dto.ConnectionString.Split(';')
-                .FirstOrDefault(p => p.Trim().StartsWith("Server="));
-            if (serverPart != null)
-                host = serverPart.Split('=')[1].Trim();
-        }
-        else if (dto.ConnectionString.Contains("@"))
-        {
-            // MongoDB: mongodb://user:pass@HOST:port/db
-            var atIndex = dto.ConnectionString.IndexOf("@");
-            var colonIndex = dto.ConnectionString.IndexOf(":", atIndex);
-            if (atIndex > 0 && colonIndex > atIndex)
-                host = dto.ConnectionString.Substring(atIndex + 1, colonIndex - atIndex - 1);
-        }
-    }
+            // Extraer host real del connection string
+            var host = "91.98.42.248"; // Valor por defecto
+            if (!string.IsNullOrEmpty(dto.ConnectionString))
+            {
+                // Intentar extraer el host del connection string
+                if (dto.ConnectionString.Contains("Host="))
+                {
+                    var hostPart = dto.ConnectionString.Split(';')
+                        .FirstOrDefault(p => p.Trim().StartsWith("Host="));
+                    if (hostPart != null)
+                        host = hostPart.Split('=')[1].Trim();
+                }
+                else if (dto.ConnectionString.Contains("Server="))
+                {
+                    var serverPart = dto.ConnectionString.Split(';')
+                        .FirstOrDefault(p => p.Trim().StartsWith("Server="));
+                    if (serverPart != null)
+                        host = serverPart.Split('=')[1].Trim();
+                }
+                else if (dto.ConnectionString.Contains("@"))
+                {
+                    // MongoDB: mongodb://user:pass@HOST:port/db
+                    var atIndex = dto.ConnectionString.IndexOf("@");
+                    var colonIndex = dto.ConnectionString.IndexOf(":", atIndex);
+                    if (atIndex > 0 && colonIndex > atIndex)
+                        host = dto.ConnectionString.Substring(atIndex + 1, colonIndex - atIndex - 1);
+                }
+            }
 
-    return $@"
+            return $@"
 <!DOCTYPE html>
 <html>
 <head>
@@ -424,7 +449,7 @@ private string BuildDatabaseCreatedEmailBody(DatabaseCreatedEmailDto dto)
                 <strong>⚠️ IMPORTANTE:</strong> Guarda estas credenciales de forma segura. Por razones de seguridad, no podrás volver a verlas en el panel.
             </div>
             
-            <p><strong>Fecha de creación:</strong> {dto.CreatedAt:dd/MM/yyyy HH:mm}</p>
+            <p><strong>Fecha de creación:</strong> {localTime:dd/MM/yyyy HH:mm}</p>
             
             <p>Puedes conectarte usando estas credenciales desde cualquier cliente de {dto.Engine} como DBeaver, pgAdmin, MySQL Workbench, Compass, etc.</p>
             
@@ -438,10 +463,12 @@ private string BuildDatabaseCreatedEmailBody(DatabaseCreatedEmailDto dto)
     </div>
 </body>
 </html>";
-}
+        }
 
         private string BuildDatabaseDeletedEmailBody(DatabaseDeletedEmailDto dto)
         {
+            var localTime = ConvertToLocalTime(dto.DeletedAt);
+            
             return $@"
 <!DOCTYPE html>
 <html>
@@ -471,7 +498,7 @@ private string BuildDatabaseCreatedEmailBody(DatabaseCreatedEmailDto dto)
             <div class='info'>
                 <p><strong>Base de datos:</strong> {dto.DatabaseName}</p>
                 <p><strong>Motor:</strong> {dto.Engine}</p>
-                <p><strong>Fecha de eliminación:</strong> {dto.DeletedAt:dd/MM/yyyy HH:mm}</p>
+                <p><strong>Fecha de eliminación:</strong> {localTime:dd/MM/yyyy HH:mm}</p>
             </div>
             
             <p>⚠️ Esta acción es irreversible. Todos los datos han sido eliminados permanentemente.</p>
@@ -493,6 +520,7 @@ private string BuildDatabaseCreatedEmailBody(DatabaseCreatedEmailDto dto)
         private string BuildPlanChangedEmailBody(PlanChangedEmailDto dto)
         {
             var action = dto.IsRenewal ? "renovado" : "cambiado";
+            var localTime = ConvertToLocalTime(dto.ChangedAt);
             
             return $@"
 <!DOCTYPE html>
@@ -525,7 +553,7 @@ private string BuildDatabaseCreatedEmailBody(DatabaseCreatedEmailDto dto)
                 {(!dto.IsRenewal ? $"<p><strong>Plan anterior:</strong> {dto.OldPlanName}</p>" : "")}
                 <p><strong>Plan actual:</strong> {dto.NewPlanName}</p>
                 <p class='price'>${dto.NewPlanPrice:N2} / mes</p>
-                <p><strong>Fecha del cambio:</strong> {dto.ChangedAt:dd/MM/yyyy HH:mm}</p>
+                <p><strong>Fecha del cambio:</strong> {localTime:dd/MM/yyyy HH:mm}</p>
                 {(dto.NextBillingDate.HasValue ? $"<p><strong>Próxima facturación:</strong> {dto.NextBillingDate.Value:dd/MM/yyyy}</p>" : "")}
             </div>
             
@@ -545,6 +573,8 @@ private string BuildDatabaseCreatedEmailBody(DatabaseCreatedEmailDto dto)
 
         private string BuildPasswordResetEmailBody(PasswordResetEmailDto dto)
         {
+            var localTime = ConvertToLocalTime(dto.ResetAt);
+            
             return $@"
 <!DOCTYPE html>
 <html>
@@ -594,7 +624,7 @@ private string BuildDatabaseCreatedEmailBody(DatabaseCreatedEmailDto dto)
                 </div>
             </div>
             
-            <p><strong>Fecha del reset:</strong> {dto.ResetAt:dd/MM/yyyy HH:mm}</p>
+            <p><strong>Fecha del reset:</strong> {localTime:dd/MM/yyyy HH:mm}</p>
             
             <p>⚠️ Guarda estas credenciales en un lugar seguro.</p>
             
