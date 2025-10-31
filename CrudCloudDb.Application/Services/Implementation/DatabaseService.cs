@@ -1,5 +1,6 @@
 ﻿using CrudCloudDb.Application.Services.Interfaces;
 using CrudCloudDb.Application.DTOs.Database;
+using CrudCloudDb.Application.DTOs.Email;
 using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Core.Entities;
 using CrudCloudDb.Core.Enums;
@@ -18,7 +19,8 @@ namespace CrudCloudDb.Application.Services.Implementation
         private readonly IUserRepository _userRepository;
         private readonly ILogger<DatabaseService> _logger;
         private readonly IConfiguration _configuration;
-        private readonly ICredentialService _credentialService; // ⭐ NUEVO
+        private readonly ICredentialService _credentialService;
+        private readonly IEmailService _emailService;  // ✅ AGREGADO - Faltaba esto
 
         public DatabaseService(
             IDockerService dockerService,
@@ -26,14 +28,16 @@ namespace CrudCloudDb.Application.Services.Implementation
             IUserRepository userRepository,
             ILogger<DatabaseService> logger,
             IConfiguration configuration,
-            ICredentialService credentialService) // ⭐ NUEVO PARÁMETRO
+            ICredentialService credentialService,
+            IEmailService emailService)  // ✅ AGREGADO - Faltaba esto
         {
             _dockerService = dockerService;
             _databaseRepository = databaseRepository;
             _userRepository = userRepository;
             _logger = logger;
             _configuration = configuration;
-            _credentialService = credentialService; // ⭐ NUEVO
+            _credentialService = credentialService;
+            _emailService = emailService;  // ✅ AGREGADO - Faltaba esto
         }
 
         /// <summary>
@@ -60,7 +64,7 @@ namespace CrudCloudDb.Application.Services.Implementation
             var dbInstance = await _dockerService.CreateDatabaseContainerAsync(
                 user,
                 request.Engine,
-                databaseName); // ⭐ Nombre generado automáticamente
+                databaseName);
 
             // 4. Guardar en BD
             _logger.LogInformation($"💾 Saving database instance to repository");
@@ -162,8 +166,8 @@ namespace CrudCloudDb.Application.Services.Implementation
             _logger.LogInformation($"💾 Marking database as deleted (30 days grace period)");
             await _databaseRepository.UpdateAsync(database);
 
-            // Enviar email de confirmación con información del período de gracia
-            await _emailService.SendDatabaseDeletedEmailAsync(new DatabaseDeleteEmailDto
+            // ✅ CORREGIDO: Ahora _emailService SÍ existe
+            await _emailService.SendDatabaseDeletedEmailAsync(new DatabaseDeletedEmailDto
             {
                 UserEmail = user.Email,
                 UserName = user.Email.Split('@')[0],
