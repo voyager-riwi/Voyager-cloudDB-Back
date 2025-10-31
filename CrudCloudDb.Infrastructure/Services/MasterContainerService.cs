@@ -163,11 +163,10 @@ namespace CrudCloudDb.Infrastructure.Services
             {
                 DatabaseEngine.PostgreSQL => ("postgres", "cambiarestapassword"),
                 DatabaseEngine.MySQL => ("root", "cambiarestapassword"),
-                DatabaseEngine.MongoDB => ("admin", "cambiarestapassword"),
+                DatabaseEngine.MongoDB => ("admin", "SecureMongoPass2024!"),  // ✅ CORRECTA
                 _ => throw new NotSupportedException()
             };
         }
-
         private async Task<MasterContainerInfo> CreateMasterContainerAsync(DatabaseEngine engine)
         {
             var containerName = GetMasterContainerName(engine);
