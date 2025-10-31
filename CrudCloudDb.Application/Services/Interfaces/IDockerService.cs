@@ -11,7 +11,7 @@ namespace CrudCloudDb.Application.Services.Interfaces
     public interface IDockerService
     {
         /// <summary>
-        /// Crea un nuevo contenedor de base de datos
+        /// Crea una nueva base de datos dentro de un contenedor maestro
         /// </summary>
         Task<DatabaseInstance> CreateDatabaseContainerAsync(
             User user,
@@ -19,27 +19,12 @@ namespace CrudCloudDb.Application.Services.Interfaces
             string databaseName);
 
         /// <summary>
-        /// Detiene un contenedor
-        /// </summary>
-        Task<bool> StopContainerAsync(string containerId);
-
-        /// <summary>
-        /// Inicia un contenedor detenido
-        /// </summary>
-        Task<bool> StartContainerAsync(string containerId);
-
-        /// <summary>
-        /// Elimina un contenedor permanentemente
-        /// </summary>
-        Task<bool> RemoveContainerAsync(string containerId);
-
-        /// <summary>
-        /// Verifica si un contenedor está corriendo
+        /// Verifica si un contenedor maestro está corriendo
         /// </summary>
         Task<bool> IsContainerRunningAsync(string containerId);
 
         /// <summary>
-        /// Obtiene los logs de un contenedor
+        /// Obtiene los logs de un contenedor maestro
         /// </summary>
         Task<string> GetContainerLogsAsync(string containerId, int lines = 100);
 
@@ -50,7 +35,15 @@ namespace CrudCloudDb.Application.Services.Interfaces
             DatabaseInstance dbInstance,
             User user);
 
+        /// <summary>
+        /// Marca una base de datos como eliminada (no la elimina físicamente todavía)
+        /// </summary>
         Task<bool> DeleteDatabaseAsync(DatabaseInstance database, User user);
+
+        /// <summary>
+        /// Elimina permanentemente una base de datos del contenedor maestro (después del período de gracia)
+        /// </summary>
+        Task PermanentlyDeleteDatabaseAsync(DatabaseEngine engine, string dbName, string username);
     }
 
     /// <summary>

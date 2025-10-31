@@ -1,0 +1,71 @@
+name: 🚀 Deploy Backend to Production
+
+on:
+  push:
+    branches:
+      - deployment/docker-nginx
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy Backend to service.voyager.andrescortes.dev
+    
+    steps:
+      - name: 🚀 Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            echo "📦 Starting backend deployment..."
+            echo "========================================="
+            
+            cd ~/Voyager-cloudDB-Back
+            
+            echo "⬇️  Pulling latest code..."
+            git fetch origin deployment/docker-nginx
+            git reset --hard origin/deployment/docker-nginx
+            
+            echo "🛑 Stopping current container..."
+            docker stop crudclouddb_backend || true
+            docker rm crudclouddb_backend || true
+            
+            echo "🔨 Building Docker image..."
+            docker build -t crudclouddb-api:latest .
+            
+            echo "▶️  Starting container..."
+            docker run -d \
+              --name crudclouddb_backend \
+              --restart unless-stopped \
+              -p 5191:5191 \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -e ASPNETCORE_ENVIRONMENT=Production \
+              -e ASPNETCORE_URLS=http://+:5191 \
+              crudclouddb-api:latest
+            
+            echo "⏳ Waiting for container..."
+            sleep 5
+            
+            if docker ps | grep -q crudclouddb_backend; then
+              echo "✅ Container running!"
+              
+              echo "🏥 Testing endpoint..."
+              curl -f http://localhost:5191/health || echo "⚠️ Health check failed"
+              
+            else
+              echo "❌ Container failed!"
+              docker logs crudclouddb_backend
+              exit 1
+            fi
+            
+            echo "🧹 Cleaning up..."
+            docker image prune -f
+            
+            echo "📋 Recent logs:"
+            docker logs --tail 30 crudclouddb_backend
+            
+            echo "========================================="
+            echo "✅ Backend deployed!"
+            echo "🌐 API: http://service.voyager.andrescortes.dev"
