@@ -25,8 +25,10 @@ public class UsersController : ControllerBase
     public async Task<IActionResult> GetProfile()
     {
         var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        _logger.LogInformation("Petición recibida para [GET /api/Users/me] por el usuario con ID: {UserId}", userIdString);
         if (!Guid.TryParse(userIdString, out var userId))
         {
+            _logger.LogWarning("El token para [GET /api/Users/profile] contenía un ID de usuario con formato inválido: {UserIdString}", userIdString);
             return Unauthorized("Token invalido");
         }
 
@@ -49,8 +51,10 @@ public class UsersController : ControllerBase
         }
 
         var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        _logger.LogInformation("Petición recibida para [PUT /api/users/me] por el usuario con ID: {UserId}", userIdString);
         if (!Guid.TryParse(userIdString, out var userId))
         {
+            _logger.LogWarning("El token para [PUT /api/users/me] contenía un ID de usuario con formato inválido: {UserIdString}", userIdString);
             return Unauthorized("Token de usuario inválido.");
         }
 
@@ -58,13 +62,12 @@ public class UsersController : ControllerBase
 
         if (result.Succeeded)
         {
-            return Ok(result);
+            return Ok(result); 
         }
 
         return BadRequest(result);
     }
-
-    // --- 3. CAMBIAR CONTRASEÑA DEL USUARIO ACTUAL ---
+    
     [HttpPost("change-password")]
     public async Task<IActionResult> ChangeMyPassword([FromBody] ChangePasswordRequestDto request)
     {
