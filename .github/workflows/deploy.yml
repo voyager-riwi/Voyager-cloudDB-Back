@@ -1,4 +1,4 @@
-name: 🚀 Deploy to Production
+name: 🚀 Deploy Backend to Production
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    name: Deploy to voyager.andrescortes.dev
+    name: Deploy Backend to service.voyager.andrescortes.dev
     
     steps:
       - name: 🚀 Deploy via SSH
@@ -19,47 +19,53 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
           script: |
-            echo "📦 Starting deployment for CrudCloudDb..."
-            echo "==========================================="
+            echo "📦 Starting backend deployment..."
+            echo "========================================="
             
             cd ~/Voyager-cloudDB-Back
             
-            echo "⬇️  Pulling latest code from GitHub..."
-            git pull origin deployment/docker-nginx
+            echo "⬇️  Pulling latest code..."
+            git fetch origin deployment/docker-nginx
+            git reset --hard origin/deployment/docker-nginx
             
             echo "🛑 Stopping current container..."
-            docker stop crudclouddb_container || true
-            docker rm crudclouddb_container || true
+            docker stop crudclouddb_backend || true
+            docker rm crudclouddb_backend || true
             
-            echo "🔨 Building new Docker image..."
+            echo "🔨 Building Docker image..."
             docker build -t crudclouddb-api:latest .
             
-            echo "▶️  Starting new container..."
+            echo "▶️  Starting container..."
             docker run -d \
-              --name crudclouddb_container \
+              --name crudclouddb_backend \
               --restart unless-stopped \
-              --network host \
+              -p 5191:5191 \
               -v /var/run/docker.sock:/var/run/docker.sock \
               -e ASPNETCORE_ENVIRONMENT=Production \
+              -e ASPNETCORE_URLS=http://+:5191 \
               crudclouddb-api:latest
             
-            echo "⏳ Waiting for container to start..."
+            echo "⏳ Waiting for container..."
             sleep 5
             
-            if docker ps | grep -q crudclouddb_container; then
-              echo "✅ Container is running!"
+            if docker ps | grep -q crudclouddb_backend; then
+              echo "✅ Container running!"
+              
+              echo "🏥 Testing endpoint..."
+              curl -f http://localhost:5191/health || echo "⚠️ Health check failed"
+              
             else
-              echo "❌ Container failed to start!"
-              docker logs crudclouddb_container
+              echo "❌ Container failed!"
+              docker logs crudclouddb_backend
               exit 1
             fi
             
-            echo "🧹 Cleaning up old images..."
+            echo "🧹 Cleaning up..."
             docker image prune -f
             
-            echo "📋 Recent container logs:"
-            docker logs --tail 20 crudclouddb_container
+            echo "📋 Recent logs:"
+            docker logs --tail 30 crudclouddb_backend
             
-            echo "==========================================="
-            echo "✅ Deployment completed successfully!"
-            echo "🌐 API available at: https://voyager.andrescortes.dev"
+            echo "========================================="
+            echo "✅ Backend deployed!"
+            echo "🌐 API: http://service.voyager.andrescortes.dev"

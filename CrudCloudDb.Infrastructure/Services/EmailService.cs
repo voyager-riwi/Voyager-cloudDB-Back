@@ -25,6 +25,7 @@ namespace CrudCloudDb.Infrastructure.Services
         private readonly string _username;
         private readonly string _password;
         private readonly bool _enableSsl;
+        private readonly string _timeZoneId;
 
         public EmailService(
             IConfiguration configuration,
@@ -33,6 +34,9 @@ namespace CrudCloudDb.Infrastructure.Services
         {
             _emailLogRepository = emailLogRepository;
             _logger = logger;
+
+            // Configuración de zona horaria
+            _timeZoneId = configuration["TimeZoneSettings:TimeZoneId"] ?? "SA Pacific Standard Time";
 
             // ⭐ Sintaxis correcta con valores por defecto
             _smtpServer = configuration["EmailSettings:SmtpServer"]
@@ -60,6 +64,23 @@ namespace CrudCloudDb.Infrastructure.Services
             _enableSsl = !string.IsNullOrEmpty(enableSslString) 
                 ? bool.Parse(enableSslString) 
                 : true;
+        }
+
+        /// <summary>
+        /// Convierte UTC a la zona horaria configurada
+        /// </summary>
+        private DateTime ConvertToLocalTime(DateTime utcDateTime)
+        {
+            try
+            {
+                var timeZone = TimeZoneInfo.FindSystemTimeZoneById(_timeZoneId);
+                return TimeZoneInfo.ConvertTimeFromUtc(utcDateTime, timeZone);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, $"Error converting timezone, using UTC. TimeZoneId: {_timeZoneId}");
+                return utcDateTime;
+            }
         }
 
         // ============================================
@@ -179,7 +200,28 @@ namespace CrudCloudDb.Infrastructure.Services
                 throw;
             }
         }
+        
+        // =========================================================
+        // 6️⃣ EMAIL: PASSWORD RESET DE CUENTA DE USUARIO (NUEVO)
+        // =========================================================
+        public async Task SendAccountPasswordResetEmailAsync(AccountPasswordResetEmailDto emailDto)
+        {
+       
+            try
+            {
+                _logger.LogInformation($"Sending account password reset email to {emailDto.ToEmail}");
+                var subject = "Tu codigo de recuperacion de contraseña";
+                var body = BuildAccountPasswordResetEmailBody(emailDto);
 
+                await SendEmailAsync(emailDto.ToEmail, subject, body, EmailType.AccountPasswordReset);
+                _logger.LogInformation($"✅ Account password reset email sent to {emailDto.ToEmail}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error sending account password reset email to {emailDto.ToEmail}");
+            }
+        }
+        
         // ============================================
         // MÉTODO PRIVADO: ENVIAR EMAIL CON MAILKIT
         // ============================================
@@ -255,6 +297,8 @@ namespace CrudCloudDb.Infrastructure.Services
 
         private string BuildAccountCreatedEmailBody(AccountCreatedEmailDto dto)
         {
+            var localTime = ConvertToLocalTime(dto.CreatedAt);
+            
             return $@"
 <!DOCTYPE html>
 <html>
@@ -282,7 +326,7 @@ namespace CrudCloudDb.Infrastructure.Services
             <p>¡Tu cuenta ha sido creada exitosamente! Estamos emocionados de tenerte con nosotros.</p>
             
             <div class='highlight'>
-                <p><strong>Fecha de registro:</strong> {dto.CreatedAt:dd/MM/yyyy HH:mm}</p>
+                <p><strong>Fecha de registro:</strong> {localTime:dd/MM/yyyy HH:mm}</p>
                 <p><strong>Email:</strong> {dto.UserEmail}</p>
             </div>
             
@@ -312,6 +356,46 @@ namespace CrudCloudDb.Infrastructure.Services
 
         private string BuildDatabaseCreatedEmailBody(DatabaseCreatedEmailDto dto)
         {
+            var localTime = ConvertToLocalTime(dto.CreatedAt);
+            
+            // Determinar colores según el motor
+            var (primaryColor, bgColor, borderColor) = dto.Engine.ToLower() switch
+            {
+                "postgresql" => ("#3B82F6", "#EFF6FF", "#3B82F6"), // Azul
+                "mysql" => ("#F97316", "#FFF7ED", "#F97316"),      // Naranja
+                "mongodb" => ("#10B981", "#F0FDF4", "#10B981"),    // Verde
+                _ => ("#6B7280", "#F3F4F6", "#6B7280")             // Gris por defecto
+            };
+
+            // Extraer host real del connection string
+            var host = "91.98.42.248"; // Valor por defecto
+            if (!string.IsNullOrEmpty(dto.ConnectionString))
+            {
+                // Intentar extraer el host del connection string
+                if (dto.ConnectionString.Contains("Host="))
+                {
+                    var hostPart = dto.ConnectionString.Split(';')
+                        .FirstOrDefault(p => p.Trim().StartsWith("Host="));
+                    if (hostPart != null)
+                        host = hostPart.Split('=')[1].Trim();
+                }
+                else if (dto.ConnectionString.Contains("Server="))
+                {
+                    var serverPart = dto.ConnectionString.Split(';')
+                        .FirstOrDefault(p => p.Trim().StartsWith("Server="));
+                    if (serverPart != null)
+                        host = serverPart.Split('=')[1].Trim();
+                }
+                else if (dto.ConnectionString.Contains("@"))
+                {
+                    // MongoDB: mongodb://user:pass@HOST:port/db
+                    var atIndex = dto.ConnectionString.IndexOf("@");
+                    var colonIndex = dto.ConnectionString.IndexOf(":", atIndex);
+                    if (atIndex > 0 && colonIndex > atIndex)
+                        host = dto.ConnectionString.Substring(atIndex + 1, colonIndex - atIndex - 1);
+                }
+            }
+
             return $@"
 <!DOCTYPE html>
 <html>
@@ -321,12 +405,12 @@ namespace CrudCloudDb.Infrastructure.Services
         body {{ font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px; }}
         .container {{ max-width: 600px; margin: 0 auto; background-color: white; border-radius: 10px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
         .header {{ text-align: center; margin-bottom: 30px; }}
-        .header h1 {{ color: #10B981; margin: 0; }}
+        .header h1 {{ color: {primaryColor}; margin: 0; }}
         .content {{ line-height: 1.6; color: #333; }}
-        .credentials {{ background-color: #F0FDF4; border-left: 4px solid #10B981; padding: 20px; margin: 20px 0; border-radius: 5px; }}
-        .credentials h3 {{ margin-top: 0; color: #10B981; }}
+        .credentials {{ background-color: {bgColor}; border-left: 4px solid {borderColor}; padding: 20px; margin: 20px 0; border-radius: 5px; }}
+        .credentials h3 {{ margin-top: 0; color: {primaryColor}; }}
         .credential-item {{ margin: 10px 0; }}
-        .credential-label {{ font-weight: bold; color: #059669; }}
+        .credential-label {{ font-weight: bold; color: {primaryColor}; }}
         .credential-value {{ font-family: 'Courier New', monospace; background-color: white; padding: 5px 10px; border-radius: 3px; display: inline-block; }}
         .warning {{ background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 15px; margin: 20px 0; border-radius: 5px; }}
         .footer {{ text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #E5E7EB; color: #6B7280; font-size: 12px; }}
@@ -347,7 +431,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 <h3>📋 Credenciales de acceso</h3>
                 
                 <div class='credential-item'>
-                    <span class='credential-label'>🗄️ Motor:</span>
+                    <span class='credential-label'>🗄️ Gestor:</span>
                     <span class='credential-value'>{dto.Engine}</span>
                 </div>
                 
@@ -368,7 +452,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 
                 <div class='credential-item'>
                     <span class='credential-label'>🌐 Host:</span>
-                    <span class='credential-value'>localhost</span>
+                    <span class='credential-value'>{host}</span>
                 </div>
                 
                 <div class='credential-item'>
@@ -386,9 +470,9 @@ namespace CrudCloudDb.Infrastructure.Services
                 <strong>⚠️ IMPORTANTE:</strong> Guarda estas credenciales de forma segura. Por razones de seguridad, no podrás volver a verlas en el panel.
             </div>
             
-            <p><strong>Fecha de creación:</strong> {dto.CreatedAt:dd/MM/yyyy HH:mm}</p>
+            <p><strong>Fecha de creación:</strong> {localTime:dd/MM/yyyy HH:mm}</p>
             
-            <p>Puedes conectarte usando estas credenciales desde cualquier cliente de {dto.Engine} como DBeaver, pgAdmin, MySQL Workbench, etc.</p>
+            <p>Puedes conectarte usando estas credenciales desde cualquier cliente de {dto.Engine} como DBeaver, pgAdmin, MySQL Workbench, Compass, etc.</p>
             
             <p>Saludos,<br><strong>Equipo de PotterCloud</strong></p>
         </div>
@@ -404,6 +488,9 @@ namespace CrudCloudDb.Infrastructure.Services
 
         private string BuildDatabaseDeletedEmailBody(DatabaseDeletedEmailDto dto)
         {
+            var localTime = ConvertToLocalTime(dto.DeletedAt);
+            var permanentDeletionDate = localTime.AddDays(30);
+
             return $@"
 <!DOCTYPE html>
 <html>
@@ -413,39 +500,54 @@ namespace CrudCloudDb.Infrastructure.Services
         body {{ font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px; }}
         .container {{ max-width: 600px; margin: 0 auto; background-color: white; border-radius: 10px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
         .header {{ text-align: center; margin-bottom: 30px; }}
-        .header h1 {{ color: #EF4444; margin: 0; }}
+        .header h1 {{ color: #F59E0B; margin: 0; }}
         .content {{ line-height: 1.6; color: #333; }}
-        .info {{ background-color: #FEE2E2; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+        .info {{ background-color: #FEF3C7; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #F59E0B; }}
+        .warning {{ background-color: #FEE2E2; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #EF4444; }}
+        .restore-btn {{ display: inline-block; background-color: #10B981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 15px 0; font-weight: bold; }}
         .footer {{ text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #E5E7EB; color: #6B7280; font-size: 12px; }}
     </style>
 </head>
 <body>
     <div class='container'>
         <div class='header'>
-            <h1>🗑️ Base de datos eliminada</h1>
+            <h1>⚠️ Base de datos marcada para eliminación</h1>
         </div>
-        
+
         <div class='content'>
             <p>Hola <strong>{dto.UserName}</strong>,</p>
-            
-            <p>Tu base de datos <strong>{dto.DatabaseName}</strong> ({dto.Engine}) ha sido eliminada permanentemente.</p>
-            
+
+            <p>Tu base de datos <strong>{dto.DatabaseName}</strong> ({dto.Engine}) ha sido marcada para eliminación.</p>
+
             <div class='info'>
+                <p><strong>⏰ PERÍODO DE GRACIA:</strong> Tienes <strong>30 días</strong> para restaurar esta base de datos desde tu panel de control.</p>
                 <p><strong>Base de datos:</strong> {dto.DatabaseName}</p>
                 <p><strong>Motor:</strong> {dto.Engine}</p>
-                <p><strong>Fecha de eliminación:</strong> {dto.DeletedAt:dd/MM/yyyy HH:mm}</p>
+                <p><strong>Fecha de eliminación:</strong> {localTime:dd/MM/yyyy HH:mm}</p>
+                <p><strong>Eliminación permanente:</strong> {permanentDeletionDate:dd/MM/yyyy HH:mm}</p>
             </div>
-            
-            <p>⚠️ Esta acción es irreversible. Todos los datos han sido eliminados permanentemente.</p>
-            
-            <p>Si eliminaste esta base de datos por error, por favor contacta a soporte inmediatamente.</p>
-            
+
+            <div class='warning'>
+                <p><strong>⚠️ IMPORTANTE:</strong></p>
+                <p>• Durante los próximos 30 días, puedes restaurar tu base de datos en cualquier momento.</p>
+                <p>• Después del <strong>{permanentDeletionDate:dd/MM/yyyy}</strong>, todos los datos serán eliminados <strong>permanentemente</strong> y no podrán ser recuperados.</p>
+                <p>• La base de datos ya no aparecerá en tu panel, pero puedes contactar a soporte para restaurarla.</p>
+            </div>
+
+            <p>Si eliminaste esta base de datos por error, ingresa a tu panel de control y restaura la base de datos antes de la fecha límite.</p>
+
+            <p style='text-align: center;'>
+                <strong>¿Fue un error? Restaura tu base de datos ahora:</strong><br>
+                <a href='https://service.voyager.andrescortes.dev/databases' class='restore-btn'>🔄 Ir al Panel de Control</a>
+            </p>
+
             <p>Saludos,<br><strong>Equipo de PotterCloud</strong></p>
         </div>
-        
+
         <div class='footer'>
             <p>Este es un email automático, por favor no respondas a este mensaje.</p>
-            <p>&copy; 2024 PotterCloud. Todos los derechos reservados.</p>
+            <p>Si tienes preguntas, contacta a soporte.</p>
+            <p>&copy; 2025 PotterCloud. Todos los derechos reservados.</p>
         </div>
     </div>
 </body>
@@ -455,6 +557,7 @@ namespace CrudCloudDb.Infrastructure.Services
         private string BuildPlanChangedEmailBody(PlanChangedEmailDto dto)
         {
             var action = dto.IsRenewal ? "renovado" : "cambiado";
+            var localTime = ConvertToLocalTime(dto.ChangedAt);
             
             return $@"
 <!DOCTYPE html>
@@ -487,7 +590,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 {(!dto.IsRenewal ? $"<p><strong>Plan anterior:</strong> {dto.OldPlanName}</p>" : "")}
                 <p><strong>Plan actual:</strong> {dto.NewPlanName}</p>
                 <p class='price'>${dto.NewPlanPrice:N2} / mes</p>
-                <p><strong>Fecha del cambio:</strong> {dto.ChangedAt:dd/MM/yyyy HH:mm}</p>
+                <p><strong>Fecha del cambio:</strong> {localTime:dd/MM/yyyy HH:mm}</p>
                 {(dto.NextBillingDate.HasValue ? $"<p><strong>Próxima facturación:</strong> {dto.NextBillingDate.Value:dd/MM/yyyy}</p>" : "")}
             </div>
             
@@ -504,9 +607,12 @@ namespace CrudCloudDb.Infrastructure.Services
 </body>
 </html>";
         }
+        
 
         private string BuildPasswordResetEmailBody(PasswordResetEmailDto dto)
         {
+            var localTime = ConvertToLocalTime(dto.ResetAt);
+            
             return $@"
 <!DOCTYPE html>
 <html>
@@ -556,7 +662,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 </div>
             </div>
             
-            <p><strong>Fecha del reset:</strong> {dto.ResetAt:dd/MM/yyyy HH:mm}</p>
+            <p><strong>Fecha del reset:</strong> {localTime:dd/MM/yyyy HH:mm}</p>
             
             <p>⚠️ Guarda estas credenciales en un lugar seguro.</p>
             
@@ -566,6 +672,54 @@ namespace CrudCloudDb.Infrastructure.Services
         <div class='footer'>
             <p>Este es un email automático, por favor no respondas a este mensaje.</p>
             <p>&copy; 2024 PotterCloud. Todos los derechos reservados.</p>
+        </div>
+    </div>
+</body>
+</html>";
+        }
+        
+        
+        private string BuildAccountPasswordResetEmailBody(AccountPasswordResetEmailDto dto)
+        {
+            return $@"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <style>
+        body {{ font-family: Arial, sans-serif;; margin: 0; padding: 20px; }}
+        .container {{ max-width: 600px; margin: 0 auto; background-color: white; border-radius: 10px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        .header {{ text-align: center; margin-bottom: 30px; }}
+        .header h1 {{ color: #4F46E5; margin: 0; }}
+        .content {{ line-height: 1.6; color: #333; }}
+        .code-container {{ background-color: #F3F4F6; text-align: center; padding: 20px; border-radius: 5px; margin: 20px 0; }}
+        .code {{ font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #4F46E5; }}
+        .footer {{ text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #E5E7EB; color: #6B7280; font-size: 12px; }}
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <div class='header'>
+            <h1>Código de Recuperación</h1>
+        </div>
+        
+        <div class='content'>
+            <p>Hola <strong>{dto.Username}</strong>,</p>
+            
+            <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta. Ingresa el siguiente código en la página de recuperación:</p>
+            
+            <div class='code-container'>
+                <span class='code'>{dto.ResetToken}</span>
+            </div>
+            
+            <p>Este código es válido por 15 minutos. Si no solicitaste este cambio, puedes ignorar este correo de forma segura.</p>
+            
+            <p>Saludos,<br><strong>Equipo de PotterCloud</strong></p>
+        </div>
+        
+        <div class='footer'>
+            <p>Este es un email automático, por favor no respondas a este mensaje.</p>
+            <p>&copy; 2025 PotterCloud. Todos los derechos reservados.</p>
         </div>
     </div>
 </body>

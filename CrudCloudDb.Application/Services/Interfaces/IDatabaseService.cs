@@ -31,12 +31,20 @@ namespace CrudCloudDb.Application.Services.Interfaces
         Task<DatabaseResponseDto?> GetDatabaseByIdAsync(Guid userId, Guid databaseId);
 
         /// <summary>
-        /// Elimina una base de datos permanentemente
+        /// Marca una base de datos como eliminada (soft delete - 30 días de gracia)
         /// </summary>
         /// <param name="userId">ID del usuario</param>
         /// <param name="databaseId">ID de la base de datos</param>
-        /// <returns>True si se eliminó correctamente</returns>
+        /// <returns>True si se marcó como eliminada correctamente</returns>
         Task<bool> DeleteDatabaseAsync(Guid userId, Guid databaseId);
+
+        /// <summary>
+        /// Restaura una base de datos marcada como eliminada (dentro del período de gracia de 30 días)
+        /// </summary>
+        /// <param name="userId">ID del usuario</param>
+        /// <param name="databaseId">ID de la base de datos</param>
+        /// <returns>True si se restauró correctamente</returns>
+        Task<bool> RestoreDatabaseAsync(Guid userId, Guid databaseId);
 
         /// <summary>
         /// Resetea el password de una base de datos
@@ -44,21 +52,5 @@ namespace CrudCloudDb.Application.Services.Interfaces
         /// <param name="userId">ID del usuario</param>
         /// <param name="databaseId">ID de la base de datos</param>
         Task ResetPasswordAsync(Guid userId, Guid databaseId);
-
-        /// <summary>
-        /// Inicia un contenedor detenido
-        /// </summary>
-        /// <param name="userId">ID del usuario</param>
-        /// <param name="databaseId">ID de la base de datos</param>
-        /// <returns>True si se inició correctamente</returns>
-        Task<bool> StartDatabaseAsync(Guid userId, Guid databaseId);
-
-        /// <summary>
-        /// Detiene un contenedor en ejecución
-        /// </summary>
-        /// <param name="userId">ID del usuario</param>
-        /// <param name="databaseId">ID de la base de datos</param>
-        /// <returns>True si se detuvo correctamente</returns>
-        Task<bool> StopDatabaseAsync(Guid userId, Guid databaseId);
     }
 }

@@ -10,7 +10,8 @@ namespace CrudCloudDb.Core.Enums
         DatabaseDeleted = 3,
         PasswordReset = 4,
         PlanChanged = 5,
-        Welcome = 6,
+        AccountPasswordReset = 6,
+        Welcome = 7,
         Other = 99
     }
 }

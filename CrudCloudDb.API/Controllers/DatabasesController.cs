@@ -65,7 +65,7 @@ namespace CrudCloudDb.API.Controllers
         {
             try
             {
-                _logger.LogInformation($"📥 Create database request: {request.Engine} - {request.DatabaseName}");
+                _logger.LogInformation($"📥 Create database request: {request.Engine}");
                 
                 var userId = GetCurrentUserId();
                 var result = await _databaseService.CreateDatabaseAsync(userId, request);
@@ -255,71 +255,51 @@ namespace CrudCloudDb.API.Controllers
         }
 
         // ============================================
-        // POST /api/databases/{id}/start
+        // POST /api/databases/{id}/restore
         // ============================================
         /// <summary>
-        /// Inicia un contenedor maestro detenido
+        /// Restaura una base de datos eliminada (dentro del período de gracia de 30 días)
         /// </summary>
         /// <param name="id">ID de la base de datos</param>
-        /// <returns>Confirmación de inicio</returns>
-        [HttpPost("{id}/start")]
+        /// <returns>Confirmación de restauración</returns>
+        [HttpPost("{id}/restore")]
         [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        public async Task<IActionResult> StartDatabase(Guid id)
+        public async Task<IActionResult> RestoreDatabase(Guid id)
         {
             try
             {
                 var userId = GetCurrentUserId();
-                _logger.LogInformation($"▶️ Start database request: {id}");
-                
-                var success = await _databaseService.StartDatabaseAsync(userId, id);
-                
-                var message = success 
-                    ? "Database started successfully" 
-                    : "Failed to start database";
-                
-                _logger.LogInformation($"{(success ? "✅" : "❌")} {message}");
-                
-                return Ok(new { success, message });
+                _logger.LogInformation($"♻️ Restore database request: {id} by user {userId}");
+
+                var success = await _databaseService.RestoreDatabaseAsync(userId, id);
+
+                if (!success)
+                {
+                    _logger.LogWarning($"⚠️ Database {id} not found or already active");
+                    return NotFound(new { success = false, message = "Database not found or already active" });
+                }
+
+                _logger.LogInformation($"✅ Database {id} restored successfully");
+                return Ok(new { success = true, message = "Database restored successfully" });
             }
-            catch (Exception ex)
+            catch (UnauthorizedAccessException ex)
             {
-                _logger.LogError(ex, $"❌ Error starting database {id}");
+                _logger.LogWarning($"⚠️ Access denied: {ex.Message}");
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    new { success = false, message = "You don't have access to this database" });
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning($"⚠️ Invalid operation: {ex.Message}");
                 return BadRequest(new { success = false, message = ex.Message });
             }
-        }
-
-        // ============================================
-        // POST /api/databases/{id}/stop
-        // ============================================
-        /// <summary>
-        /// Detiene un contenedor maestro
-        /// </summary>
-        /// <param name="id">ID de la base de datos</param>
-        /// <returns>Confirmación de detención</returns>
-        [HttpPost("{id}/stop")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        public async Task<IActionResult> StopDatabase(Guid id)
-        {
-            try
-            {
-                var userId = GetCurrentUserId();
-                _logger.LogInformation($"⏸️ Stop database request: {id}");
-                
-                var success = await _databaseService.StopDatabaseAsync(userId, id);
-                
-                var message = success 
-                    ? "Database stopped successfully" 
-                    : "Failed to stop database";
-                
-                _logger.LogInformation($"{(success ? "✅" : "❌")} {message}");
-                
-                return Ok(new { success, message });
-            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"❌ Error stopping database {id}");
+                _logger.LogError(ex, $"❌ Error restoring database {id}");
                 return BadRequest(new { success = false, message = ex.Message });
             }
         }

@@ -9,6 +9,7 @@ using CrudCloudDb.Application.DTOs.Credential;
 using Npgsql;
 using MySqlConnector;
 using MongoDB.Driver;
+using Microsoft.Extensions.Configuration;
 
 namespace CrudCloudDb.Infrastructure.Services
 {
@@ -19,17 +20,20 @@ namespace CrudCloudDb.Infrastructure.Services
         private readonly ICredentialService _credentialService;
         private readonly IEmailService _emailService;
         private readonly ILogger<DockerService> _logger;
+        private readonly IConfiguration _configuration;
 
         public DockerService(
             IMasterContainerService masterContainerService,
             ICredentialService credentialService,
             IEmailService emailService,
-            ILogger<DockerService> logger)
+            ILogger<DockerService> logger,
+            IConfiguration configuration)
         {
             _masterContainerService = masterContainerService;
             _credentialService = credentialService;
             _emailService = emailService;
             _logger = logger;
+            _configuration = configuration;
 
             if (OperatingSystem.IsWindows())
             {
@@ -95,9 +99,9 @@ namespace CrudCloudDb.Infrastructure.Services
                     PasswordHash = credentials.PasswordHash,
                     Status = DatabaseStatus.Running,
                     ConnectionString = BuildConnectionString(
-                        engine, 
-                        masterContainer.Port, 
-                        databaseName, 
+                        engine,
+                        masterContainer.Port,
+                        databaseName,
                         credentials),
                     CredentialsViewed = false,
                     CreatedAt = DateTime.UtcNow
@@ -134,7 +138,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 _logger.LogInformation($"🗑️ Deleting database {dbInstance.Name}");
 
                 var masterContainer = await _masterContainerService.GetMasterContainerInfoAsync(dbInstance.Engine);
-                
+
                 if (masterContainer == null)
                 {
                     _logger.LogWarning($"⚠️ Master container not found for {dbInstance.Engine}");
@@ -175,7 +179,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 _logger.LogInformation($"🔑 Resetting password for database {dbInstance.Name}");
 
                 var masterContainer = await _masterContainerService.GetMasterContainerInfoAsync(dbInstance.Engine);
-                
+
                 if (masterContainer == null)
                     throw new Exception("Master container not found");
 
@@ -235,49 +239,33 @@ namespace CrudCloudDb.Infrastructure.Services
             }
         }
 
-        public async Task<bool> StartContainerAsync(string containerId)
+        /// <summary>
+        /// Elimina permanentemente una base de datos del contenedor maestro (después del período de gracia de 30 días)
+        /// </summary>
+        public async Task PermanentlyDeleteDatabaseAsync(DatabaseEngine engine, string dbName, string username)
         {
             try
             {
-                await _dockerClient.Containers.StartContainerAsync(
-                    containerId,
-                    new ContainerStartParameters());
-                return true;
+                _logger.LogInformation($"🗑️ Permanently deleting {engine} database: {dbName} (user: {username})");
+
+                var masterContainer = await _masterContainerService.GetOrCreateMasterContainerAsync(engine);
+
+                await DeleteDatabaseInsideMasterAsync(masterContainer, dbName, username, engine);
+
+                _logger.LogInformation($"✅ {engine} database {dbName} permanently deleted");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error starting container");
-                return false;
+                _logger.LogError(ex, $"❌ Error permanently deleting database {dbName}");
+                throw;
             }
-        }
-
-        public async Task<bool> StopContainerAsync(string containerId)
-        {
-            try
-            {
-                await _dockerClient.Containers.StopContainerAsync(
-                    containerId,
-                    new ContainerStopParameters { WaitBeforeKillSeconds = 10 });
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error stopping container");
-                return false;
-            }
-        }
-
-        public Task<bool> RemoveContainerAsync(string containerId)
-        {
-            _logger.LogWarning("⚠️ RemoveContainerAsync called but containers are shared - ignoring");
-            return Task.FromResult(true);
         }
 
         public async Task<string> GetContainerLogsAsync(string containerId, int lines = 100)
         {
             try
             {
-                #pragma warning disable CS0618
+#pragma warning disable CS0618
                 var logStream = await _dockerClient.Containers.GetContainerLogsAsync(
                     containerId,
                     new ContainerLogsParameters
@@ -286,7 +274,7 @@ namespace CrudCloudDb.Infrastructure.Services
                         ShowStderr = true,
                         Tail = lines.ToString()
                     });
-                #pragma warning restore CS0618
+#pragma warning restore CS0618
 
                 using var reader = new StreamReader(logStream);
                 return await reader.ReadToEndAsync();
@@ -313,15 +301,15 @@ namespace CrudCloudDb.Infrastructure.Services
                 case DatabaseEngine.PostgreSQL:
                     await CreatePostgreSQLDatabaseAsync(masterContainer, databaseName, credentials);
                     break;
-                
+
                 case DatabaseEngine.MySQL:
                     await CreateMySQLDatabaseAsync(masterContainer, databaseName, credentials);
                     break;
-                
+
                 case DatabaseEngine.MongoDB:
                     await CreateMongoDBDatabaseAsync(masterContainer, databaseName, credentials);
                     break;
-                
+
                 default:
                     throw new NotSupportedException($"Engine {engine} not supported");
             }
@@ -333,43 +321,98 @@ namespace CrudCloudDb.Infrastructure.Services
             CredentialsResult credentials)
         {
             var connString = $"Host={master.Host};Port={master.Port};Database=postgres;Username={master.AdminUsername};Password={master.AdminPassword}";
-            
+
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
+            // Crear usuario
             await using (var cmd = new NpgsqlCommand(
                 $"CREATE USER {credentials.Username} WITH PASSWORD '{credentials.Password}'", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
+            // Crear base de datos
             await using (var cmd = new NpgsqlCommand(
                 $"CREATE DATABASE {dbName} OWNER {master.AdminUsername}", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
+            // Dar permiso CONNECT
             await using (var cmd = new NpgsqlCommand(
                 $"GRANT CONNECT ON DATABASE {dbName} TO {credentials.Username}", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            await conn.ChangeDatabaseAsync(dbName);
+            // Cerrar conexión a postgres
+            await conn.CloseAsync();
 
+            // Abrir nueva conexión a la base de datos recién creada
+            var newConnString = $"Host={master.Host};Port={master.Port};Database={dbName};Username={master.AdminUsername};Password={master.AdminPassword}";
+            await using var newConn = new NpgsqlConnection(newConnString);
+            await newConn.OpenAsync();
+
+            // 🔒 PERMISOS RESTRINGIDOS: Solo operaciones básicas, NO DROP DATABASE
+
+            // 1. Dar acceso al schema public
             await using (var cmd = new NpgsqlCommand(
-                $"GRANT ALL PRIVILEGES ON SCHEMA public TO {credentials.Username}", conn))
+                $"GRANT USAGE ON SCHEMA public TO {credentials.Username}", newConn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
+            // 2. Permitir SELECT, INSERT, UPDATE, DELETE en tablas existentes
             await using (var cmd = new NpgsqlCommand(
-                $"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO {credentials.Username}", conn))
+                $"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {credentials.Username}", newConn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            _logger.LogInformation($"✅ PostgreSQL database {dbName} created with secure permissions");
+            // 3. Permitir uso de secuencias (para SERIAL/IDENTITY)
+            await using (var cmd = new NpgsqlCommand(
+                $"GRANT SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO {credentials.Username}", newConn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // 4. Permitir crear tablas pero NO eliminar la base de datos
+            await using (var cmd = new NpgsqlCommand(
+                $"GRANT CREATE ON SCHEMA public TO {credentials.Username}", newConn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // 5. Privilegios por defecto para tablas futuras
+            await using (var cmd = new NpgsqlCommand(
+                $"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {credentials.Username}", newConn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // 6. Privilegios por defecto para secuencias futuras
+            await using (var cmd = new NpgsqlCommand(
+                $"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, UPDATE ON SEQUENCES TO {credentials.Username}", newConn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // 7. ⚠️ IMPORTANTE: Evitar que vea otras bases de datos
+            await conn.OpenAsync(); // Reconectar a postgres para revocar permisos
+            await using (var cmd = new NpgsqlCommand(
+                $"REVOKE CONNECT ON DATABASE postgres FROM {credentials.Username}", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            await using (var cmd2 = new NpgsqlCommand(
+                $"REVOKE CONNECT ON DATABASE template1 FROM {credentials.Username}", conn))
+            {
+                await cmd2.ExecuteNonQueryAsync();
+            }
+
+            _logger.LogInformation($"✅ PostgreSQL database {dbName} created with RESTRICTED permissions (no DROP DATABASE)");
         }
 
         private async Task CreateMySQLDatabaseAsync(
@@ -378,7 +421,7 @@ namespace CrudCloudDb.Infrastructure.Services
             CredentialsResult credentials)
         {
             var connString = $"Server={master.Host};Port={master.Port};User={master.AdminUsername};Password={master.AdminPassword}";
-            
+
             await using var conn = new MySqlConnection(connString);
             await conn.OpenAsync();
 
@@ -393,8 +436,11 @@ namespace CrudCloudDb.Infrastructure.Services
                 await cmd.ExecuteNonQueryAsync();
             }
 
+            // 🔒 PERMISOS RESTRINGIDOS: Solo operaciones básicas, NO DROP DATABASE
+            // Permisos: SELECT, INSERT, UPDATE, DELETE, CREATE, INDEX, ALTER
+            // NO se dan: DROP, GRANT, SUPER, FILE, PROCESS, RELOAD, SHUTDOWN, etc.
             await using (var cmd = new MySqlCommand(
-                $"GRANT ALL PRIVILEGES ON {dbName}.* TO '{credentials.Username}'@'%'", conn))
+                $"GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, INDEX, ALTER, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, TRIGGER, REFERENCES ON {dbName}.* TO '{credentials.Username}'@'%'", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
@@ -404,7 +450,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            _logger.LogInformation($"✅ MySQL database {dbName} created with secure permissions");
+            _logger.LogInformation($"✅ MySQL database {dbName} created with RESTRICTED permissions (no DROP DATABASE)");
         }
 
         private async Task CreateMongoDBDatabaseAsync(
@@ -413,10 +459,13 @@ namespace CrudCloudDb.Infrastructure.Services
             CredentialsResult credentials)
         {
             var connString = $"mongodb://{master.AdminUsername}:{master.AdminPassword}@{master.Host}:{master.Port}/admin";
-            
+
             var client = new MongoClient(connString);
             var adminDb = client.GetDatabase("admin");
 
+            // 🔒 PERMISOS RESTRINGIDOS: readWrite + dbAdmin pero NO root ni dbOwner
+            // readWrite: Permite leer/escribir datos
+            // dbAdmin: Permite crear índices, ver stats, pero NO eliminar la BD
             var command = new MongoDB.Bson.BsonDocument
             {
                 { "createUser", credentials.Username },
@@ -425,7 +474,12 @@ namespace CrudCloudDb.Infrastructure.Services
                     {
                         new MongoDB.Bson.BsonDocument
                         {
-                            { "role", "dbOwner" },
+                            { "role", "readWrite" },
+                            { "db", dbName }
+                        },
+                        new MongoDB.Bson.BsonDocument
+                        {
+                            { "role", "dbAdmin" },
                             { "db", dbName }
                         }
                     }
@@ -434,7 +488,7 @@ namespace CrudCloudDb.Infrastructure.Services
 
             await adminDb.RunCommandAsync<MongoDB.Bson.BsonDocument>(command);
 
-            _logger.LogInformation($"✅ MongoDB database {dbName} created with secure permissions");
+            _logger.LogInformation($"✅ MongoDB database {dbName} created with RESTRICTED permissions (readWrite + dbAdmin, no DROP DATABASE)");
         }
 
         private async Task DeleteDatabaseInsideMasterAsync(
@@ -448,11 +502,11 @@ namespace CrudCloudDb.Infrastructure.Services
                 case DatabaseEngine.PostgreSQL:
                     await DeletePostgreSQLDatabaseAsync(master, dbName, username);
                     break;
-                
+
                 case DatabaseEngine.MySQL:
                     await DeleteMySQLDatabaseAsync(master, dbName, username);
                     break;
-                
+
                 case DatabaseEngine.MongoDB:
                     await DeleteMongoDBDatabaseAsync(master, dbName, username);
                     break;
@@ -465,7 +519,7 @@ namespace CrudCloudDb.Infrastructure.Services
             string username)
         {
             var connString = $"Host={master.Host};Port={master.Port};Database=postgres;Username={master.AdminUsername};Password={master.AdminPassword}";
-            
+
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
@@ -494,7 +548,7 @@ namespace CrudCloudDb.Infrastructure.Services
             string username)
         {
             var connString = $"Server={master.Host};Port={master.Port};User={master.AdminUsername};Password={master.AdminPassword}";
-            
+
             await using var conn = new MySqlConnection(connString);
             await conn.OpenAsync();
 
@@ -522,9 +576,9 @@ namespace CrudCloudDb.Infrastructure.Services
             string username)
         {
             var connString = $"mongodb://{master.AdminUsername}:{master.AdminPassword}@{master.Host}:{master.Port}/admin";
-            
+
             var client = new MongoClient(connString);
-            
+
             await client.DropDatabaseAsync(dbName);
 
             var adminDb = client.GetDatabase("admin");
@@ -548,11 +602,11 @@ namespace CrudCloudDb.Infrastructure.Services
                 case DatabaseEngine.PostgreSQL:
                     await ResetPostgreSQLPasswordAsync(master, username, newPassword);
                     break;
-                
+
                 case DatabaseEngine.MySQL:
                     await ResetMySQLPasswordAsync(master, username, newPassword);
                     break;
-                
+
                 case DatabaseEngine.MongoDB:
                     await ResetMongoDBPasswordAsync(master, username, newPassword);
                     break;
@@ -565,7 +619,7 @@ namespace CrudCloudDb.Infrastructure.Services
             string newPassword)
         {
             var connString = $"Host={master.Host};Port={master.Port};Database=postgres;Username={master.AdminUsername};Password={master.AdminPassword}";
-            
+
             await using var conn = new NpgsqlConnection(connString);
             await conn.OpenAsync();
 
@@ -582,7 +636,7 @@ namespace CrudCloudDb.Infrastructure.Services
             string newPassword)
         {
             var connString = $"Server={master.Host};Port={master.Port};User={master.AdminUsername};Password={master.AdminPassword}";
-            
+
             await using var conn = new MySqlConnection(connString);
             await conn.OpenAsync();
 
@@ -606,7 +660,7 @@ namespace CrudCloudDb.Infrastructure.Services
             string newPassword)
         {
             var connString = $"mongodb://{master.AdminUsername}:{master.AdminPassword}@{master.Host}:{master.Port}/admin";
-            
+
             var client = new MongoClient(connString);
             var adminDb = client.GetDatabase("admin");
 
@@ -627,16 +681,28 @@ namespace CrudCloudDb.Infrastructure.Services
             string dbName,
             CredentialsResult credentials)
         {
+            // Obtener host desde configuración
+            var engineName = engine.ToString();
+            var host = _configuration[$"DatabaseHosts:{engineName}"];
+
+            if (string.IsNullOrEmpty(host))
+            {
+                _logger.LogWarning($"⚠️ Host not configured for {engineName}, using localhost");
+                host = "localhost";
+            }
+
+            _logger.LogInformation($"🌐 Building connection string with host: {host}");
+
             return engine switch
             {
                 DatabaseEngine.PostgreSQL =>
-                    $"Host=localhost;Port={port};Database={dbName};Username={credentials.Username};Password={credentials.Password}",
+                    $"Host={host};Port={port};Database={dbName};Username={credentials.Username};Password={credentials.Password}",
 
                 DatabaseEngine.MySQL =>
-                    $"Server=localhost;Port={port};Database={dbName};Uid={credentials.Username};Pwd={credentials.Password}",
+                    $"Server={host};Port={port};Database={dbName};Uid={credentials.Username};Pwd={credentials.Password}",
 
                 DatabaseEngine.MongoDB =>
-                    $"mongodb://{credentials.Username}:{credentials.Password}@localhost:{port}/{dbName}?authSource={dbName}",
+                    $"mongodb://{credentials.Username}:{credentials.Password}@{host}:{port}/{dbName}?authSource={dbName}",
 
                 _ => throw new NotSupportedException()
             };

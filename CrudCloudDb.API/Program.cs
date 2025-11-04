@@ -1,5 +1,3 @@
-// Deployment test - 2025-10-28
-
 // =======================
 // 1️⃣ Using Statements
 // =======================
@@ -14,219 +12,228 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using Serilog;
+using ILogger = Microsoft.Extensions.Logging.ILogger;
 
 // =======================
-// 2️⃣ Builder Initialization
+// 2️⃣ Serilog Bootstrap Configuration
 // =======================
-var builder = WebApplication.CreateBuilder(args);
-// Configurar para escuchar en puerto 8081 (Docker)
-builder.WebHost.UseUrls("http://0.0.0.0:8081");
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(new ConfigurationBuilder()
+        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+        .Build())
+    .CreateBootstrapLogger();
 
-// Configurar CORS para que el frontend pueda consumir
-builder.Services.AddCors(options =>
+
+// =======================
+// 3️⃣ Main Application Block
+// =======================
+
+try
 {
-    options.AddPolicy("AllowAll", policy =>
+    Log.Information("Configuring web host...");
+
+    // =======================
+    // 4️⃣ Builder Initialization
+    // =======================
+    var builder = WebApplication.CreateBuilder(args);
+
+    // =======================
+    // 5️⃣ Serilog Full Integration
+    // =======================
+    builder.Host.UseSerilog((context, services, configuration) => configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext());
+
+    // =======================
+    // 6️⃣ CORS Configuration
+    // =======================
+    builder.Services.AddCors(options =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
-    });
-});
-
-// =======================
-// 4️⃣ Database Configuration
-// =======================
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseNpgsql(connectionString)
-        .UseSnakeCaseNamingConvention());
-
-// =======================
-// 5️⃣ JWT Authentication Configuration
-// =======================
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-    var secret = jwtSettings["Secret"];
-    if (secret == null) 
-        throw new ArgumentNullException(nameof(secret), "JWT Secret not configured.");
-
-    options.TokenValidationParameters = new TokenValidationParameters
-    {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        ValidIssuer = jwtSettings["Issuer"],
-        ValidAudience = jwtSettings["Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
-        ClockSkew = TimeSpan.Zero // Sin margen de tiempo extra
-    };
-});
-
-builder.Services.AddAuthorization();
-
-// =======================
-// 6️⃣ Repositories Registration
-// =======================
-builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddScoped<IPlanRepository, PlanRepository>();
-builder.Services.AddScoped<IDatabaseInstanceRepository, DatabaseInstanceRepository>(); // ⭐ AGREGADO
-builder.Services.AddScoped<IEmailLogRepository, EmailLogRepository>(); 
-
-// =======================
-// 7️⃣ Services Registration
-// =======================
-// Auth Services (de Miguel)
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IUserService, UserService>();
-
-// Database Services (tuyos) ⭐ AGREGADOS
-builder.Services.AddScoped<IMasterContainerService, MasterContainerService>();
-builder.Services.AddScoped<IDockerService, DockerService>();
-builder.Services.AddScoped<IDatabaseService, DatabaseService>();
-builder.Services.AddScoped<IPortManagerService, PortManagerService>();
-builder.Services.AddScoped<ICredentialService, CredentialService>();
-builder.Services.AddScoped<IEmailService, EmailService>();
-
-// =======================
-// 8️⃣ Controllers Configuration
-// =======================
-builder.Services.AddControllers()
-    .AddJsonOptions(options =>
-    {
-        // Convertir enums a strings en JSON
-        options.JsonSerializerOptions.Converters.Add(
-            new System.Text.Json.Serialization.JsonStringEnumConverter());
-    });
-
-// =======================
-// 9️⃣ Swagger Configuration
-// =======================
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options =>
-{
-    // Configuración básica
-    options.SwaggerDoc("v1", new OpenApiInfo 
-    { 
-        Title = "CrudCloudDb API", 
-        Version = "v1",
-        Description = "API para gestión de bases de datos on-demand"
-    });
-
-    // Configuración JWT para Swagger
-    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        In = ParameterLocation.Header,
-        Description = "JWT Authorization header using the Bearer scheme.\n\n" +
-                      "Enter 'Bearer' [space] and then your token in the text input below.\n\n" +
-                      "Example: \"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\"",
-        Name = "Authorization",
-        Type = SecuritySchemeType.ApiKey,
-        Scheme = "Bearer"
-    });
-
-    options.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
+        options.AddPolicy("AllowAll", policy =>
         {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        });
     });
-});
 
-// =======================
-// 🔟 Build App
-// =======================
-var app = builder.Build();
-// Usar CORS
-app.UseCors("AllowAll");
+    // =======================
+    // 7️⃣ Database Configuration
+    // =======================
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    builder.Services.AddDbContext<ApplicationDbContext>(options =>
+        options.UseNpgsql(connectionString)
+            .UseSnakeCaseNamingConvention());
 
-// =======================
-// 1️⃣1️⃣ Middleware Configuration
-// =======================
-// ⚠️ IMPORTANTE: El orden del middleware es CRÍTICO
-
-// CORS (siempre primero)
-app.UseCors("AllowAll");
-
-// Swagger (Development y Production)
-if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
+    // =======================
+    // 8️⃣ JWT Authentication Configuration
+    // =======================
+    builder.Services.AddAuthentication(options =>
     {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "CrudCloudDb API v1");
-        c.RoutePrefix = "swagger";
-        c.DocumentTitle = "CrudCloudDb API Documentation";
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+        var secret = jwtSettings["Secret"];
+        if (secret == null) 
+            throw new ArgumentNullException(nameof(secret), "JWT Secret not configured.");
+        
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtSettings["Issuer"],
+            ValidAudience = jwtSettings["Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
+            ClockSkew = TimeSpan.Zero
+        };
     });
-}
 
-// HTTPS Redirect (solo en desarrollo local sin Docker)
-if (app.Environment.IsDevelopment() && !builder.Configuration.GetValue<bool>("IsDocker"))
-{
-    app.UseHttpsRedirection();
-}
+    builder.Services.AddAuthorization();
 
-// ⭐ CRÍTICO: Authentication ANTES de Authorization
-app.UseAuthentication(); 
-app.UseAuthorization();
+    // =======================
+    // 9️⃣ Repositories & Services Registration
+    // =======================
+    builder.Services.AddScoped<IUserRepository, UserRepository>();
+    builder.Services.AddScoped<IPlanRepository, PlanRepository>();
+    builder.Services.AddScoped<IDatabaseInstanceRepository, DatabaseInstanceRepository>();
+    builder.Services.AddScoped<IEmailLogRepository, EmailLogRepository>();
 
-// =======================
-// 1️⃣2️⃣ Endpoint Mapping
-// =======================
+    builder.Services.AddScoped<IAuthService, AuthService>();
+    builder.Services.AddScoped<IUserService, UserService>();
+    builder.Services.AddScoped<IEmailService, EmailService>();
+    builder.Services.AddScoped<IMasterContainerService, MasterContainerService>();
+    builder.Services.AddScoped<IDockerService, DockerService>();
+    builder.Services.AddScoped<IDatabaseService, DatabaseService>();
+    builder.Services.AddScoped<IPortManagerService, PortManagerService>();
+    builder.Services.AddScoped<ICredentialService, CredentialService>();
+    
 
-// Root endpoint (público)
-app.MapGet("/", () => Results.Ok(new
-{
-    message = "CrudCloudDb API is running! 🚀",
-    environment = app.Environment.EnvironmentName,
-    timestamp = DateTime.UtcNow,
-    version = "1.0.0"
-}))
-.WithName("RootEndpoint")
-.WithOpenApi()
-.WithTags("Health");
+    // =======================
+    // 🔟 Controllers Configuration
+    // =======================
+    builder.Services.AddControllers()
+        .AddJsonOptions(options =>
+        {
+            options.JsonSerializerOptions.Converters.Add(
+                new System.Text.Json.Serialization.JsonStringEnumConverter());
+        });
 
-// Health endpoint (público)
-app.MapGet("/health", () => Results.Ok(new
-{
-    status = "healthy",
-    timestamp = DateTime.UtcNow,
-    environment = app.Environment.EnvironmentName,
-    version = "1.0.0"
-}))
-.WithName("HealthCheck")
-.WithOpenApi()
-.WithTags("Health");
+    // =======================
+    // 1️⃣1️⃣ Swagger Configuration
+    // =======================
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddSwaggerGen(options =>
+    {
+        options.SwaggerDoc("v1", new OpenApiInfo 
+        { 
+            Title = "CrudCloudDb API", 
+            Version = "v1",
+            Description = "API para gestión de bases de datos on-demand"
+        });
 
-// Mapear todos los controllers
-app.MapControllers();
+        options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+        {
+            In = ParameterLocation.Header,
+            Description = "JWT Authorization header using the Bearer scheme.\n\n" +
+                          "Enter 'Bearer' [space] and then your token in the text input below.\n\n" +
+                          "Example: \"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\"",
+            Name = "Authorization",
+            Type = SecuritySchemeType.ApiKey,
+            Scheme = "Bearer"
+        });
 
-// Health check endpoint
-app.MapGet("/health", () => new
+        options.AddSecurityRequirement(new OpenApiSecurityRequirement
+        {
+            {
+                new OpenApiSecurityScheme
+                {
+                    Reference = new OpenApiReference
+                    {
+                        Type = ReferenceType.SecurityScheme,
+                        Id = "Bearer"
+                    }
+                },
+                Array.Empty<string>()
+            }
+        });
+    });
+
+    // =======================
+    // 1️⃣2️⃣ Build App
+    // =======================
+    var app = builder.Build();
+
+    // =======================
+    // 1️⃣3️⃣ Middleware Configuration
+    // =======================
+    app.UseCors("AllowAll");
+
+    if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
+    {
+        app.UseSwagger();
+        app.UseSwaggerUI(c =>
+        {
+            c.SwaggerEndpoint("/swagger/v1/swagger.json", "CrudCloudDb API v1");
+            c.RoutePrefix = "swagger";
+            c.DocumentTitle = "CrudCloudDb API Documentation";
+        });
+    }
+
+    if (app.Environment.IsDevelopment() && !builder.Configuration.GetValue<bool>("IsDocker"))
+    {
+        app.UseHttpsRedirection();
+    }
+    
+    app.UseSerilogRequestLogging(); 
+
+    app.UseAuthentication(); 
+    app.UseAuthorization();
+
+    // =======================
+    // 1️⃣4️⃣ Endpoint Mapping
+    // =======================
+    app.MapGet("/", () => Results.Ok(new
+    {
+        message = "CrudCloudDb API is running! 🚀",
+        environment = app.Environment.EnvironmentName,
+        timestamp = DateTime.UtcNow,
+        version = "1.0.0"
+    }))
+    .WithName("RootEndpoint")
+    .WithOpenApi()
+    .WithTags("Health");
+
+    app.MapGet("/health", () => Results.Ok(new
     {
         status = "healthy",
         timestamp = DateTime.UtcNow,
         environment = app.Environment.EnvironmentName,
         version = "1.0.0"
-    })
+    }))
     .WithName("HealthCheck")
-    .WithOpenApi();
+    .WithOpenApi()
+    .WithTags("Health");
 
-// =======================
-// 1️⃣3️⃣ Run App
-// =======================
-app.Run();
+    app.MapControllers();
+
+    // =======================
+    // 1️⃣5️⃣ Run App
+    // =======================
+    Log.Information("Starting web host..."); 
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Host terminated unexpectedly."); 
+}
+finally
+{
+    Log.CloseAndFlush(); 
+}

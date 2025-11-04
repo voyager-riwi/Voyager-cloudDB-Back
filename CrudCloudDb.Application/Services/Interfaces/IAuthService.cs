@@ -8,4 +8,7 @@ public interface IAuthService
 {
     Task<ApiResponse<AuthResponseDto>> RegisterAsync(RegisterRequestDto dto);
     Task<ApiResponse<AuthResponseDto>> LoginAsync(LoginRequestDto request);
+    
+    Task<ApiResponse<object>> ForgotPasswordAsync(ForgotPasswordRequestDto request);
+    Task<ApiResponse<object>> ResetPasswordAsync(ResetPasswordRequestDto request);
 }

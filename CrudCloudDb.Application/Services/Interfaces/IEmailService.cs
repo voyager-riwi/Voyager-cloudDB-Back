@@ -31,5 +31,9 @@ namespace CrudCloudDb.Application.Services.Interfaces
         /// Envía email al resetear password de base de datos
         /// </summary>
         Task SendPasswordResetEmailAsync(PasswordResetEmailDto emailDto);
+        
+        Task SendAccountPasswordResetEmailAsync(AccountPasswordResetEmailDto emailDto);
+        
+        
     }
 }

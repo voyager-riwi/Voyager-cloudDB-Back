@@ -1,9 +1,11 @@
 ﻿using CrudCloudDb.Application.Services.Interfaces;
 using CrudCloudDb.Application.DTOs.Database;
+using CrudCloudDb.Application.DTOs.Email;
 using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Core.Entities;
 using CrudCloudDb.Core.Enums;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 
 namespace CrudCloudDb.Application.Services.Implementation
 {
@@ -16,17 +18,26 @@ namespace CrudCloudDb.Application.Services.Implementation
         private readonly IDatabaseInstanceRepository _databaseRepository;
         private readonly IUserRepository _userRepository;
         private readonly ILogger<DatabaseService> _logger;
+        private readonly IConfiguration _configuration;
+        private readonly ICredentialService _credentialService;
+        private readonly IEmailService _emailService;  // ✅ AGREGADO - Faltaba esto
 
         public DatabaseService(
             IDockerService dockerService,
             IDatabaseInstanceRepository databaseRepository,
             IUserRepository userRepository,
-            ILogger<DatabaseService> logger)
+            ILogger<DatabaseService> logger,
+            IConfiguration configuration,
+            ICredentialService credentialService,
+            IEmailService emailService)  // ✅ AGREGADO - Faltaba esto
         {
             _dockerService = dockerService;
             _databaseRepository = databaseRepository;
             _userRepository = userRepository;
             _logger = logger;
+            _configuration = configuration;
+            _credentialService = credentialService;
+            _emailService = emailService;  // ✅ AGREGADO - Faltaba esto
         }
 
         /// <summary>
@@ -34,7 +45,7 @@ namespace CrudCloudDb.Application.Services.Implementation
         /// </summary>
         public async Task<DatabaseResponseDto> CreateDatabaseAsync(Guid userId, CreateDatabaseRequestDto request)
         {
-            _logger.LogInformation($"📥 Creating {request.Engine} database '{request.DatabaseName}' for user {userId}");
+            _logger.LogInformation($"📥 Creating {request.Engine} database for user {userId}");
 
             // 1. Obtener usuario
             var user = await _userRepository.GetByIdAsync(userId);
@@ -44,37 +55,44 @@ namespace CrudCloudDb.Application.Services.Implementation
                 throw new UnauthorizedAccessException("User not found");
             }
 
-            // 2. Crear base de datos con Docker
+            // 2. Generar nombre aleatorio para la base de datos
+            var databaseName = _credentialService.GenerateDatabaseName();
+            _logger.LogInformation($"🎲 Generated database name: {databaseName}");
+
+            // 3. Crear base de datos con Docker
             _logger.LogInformation($"🐳 Creating Docker container for {request.Engine}");
             var dbInstance = await _dockerService.CreateDatabaseContainerAsync(
                 user,
                 request.Engine,
-                request.DatabaseName
-            );
+                databaseName);
 
-            // 3. Guardar en BD
+            // 4. Guardar en BD
             _logger.LogInformation($"💾 Saving database instance to repository");
             await _databaseRepository.CreateAsync(dbInstance);
 
             _logger.LogInformation($"✅ Database {dbInstance.Name} created successfully");
 
-            // 4. Mapear a DTO y devolver
+            // 5. Mapear a DTO y devolver
             return MapToDto(dbInstance, checkRunning: false);
         }
 
         /// <summary>
-        /// Obtiene todas las bases de datos de un usuario
+        /// Obtiene todas las bases de datos ACTIVAS de un usuario (excluye las eliminadas)
         /// </summary>
         public async Task<List<DatabaseResponseDto>> GetUserDatabasesAsync(Guid userId)
         {
             _logger.LogInformation($"📋 Getting databases for user {userId}");
 
             var databases = await _databaseRepository.GetByUserIdAsync(userId);
-            var databasesList = databases.ToList();
 
-            _logger.LogInformation($"✅ Found {databasesList.Count} databases for user {userId}");
+            // 🔒 FILTRAR: Solo mostrar bases de datos NO eliminadas
+            var activeDatabases = databases
+                .Where(db => db.Status != DatabaseStatus.Deleted)
+                .ToList();
 
-            return databasesList.Select(db => MapToDto(db, checkRunning: false)).ToList();
+            _logger.LogInformation($"✅ Found {activeDatabases.Count} active databases for user {userId}");
+
+            return activeDatabases.Select(db => MapToDto(db, checkRunning: false)).ToList();
         }
 
         /// <summary>
@@ -119,11 +137,11 @@ namespace CrudCloudDb.Application.Services.Implementation
         }
 
         /// <summary>
-        /// Elimina una base de datos permanentemente
+        /// Marca una base de datos como eliminada (SOFT DELETE - 30 días de gracia)
         /// </summary>
         public async Task<bool> DeleteDatabaseAsync(Guid userId, Guid databaseId)
         {
-            _logger.LogInformation($"🗑️ Deleting database {databaseId} for user {userId}");
+            _logger.LogInformation($"🗑️ Soft deleting database {databaseId} for user {userId}");
 
             var database = await _databaseRepository.GetByIdAsync(databaseId);
 
@@ -141,15 +159,24 @@ namespace CrudCloudDb.Application.Services.Implementation
 
             var user = await _userRepository.GetByIdAsync(userId);
 
-            // Eliminar contenedor Docker
-            _logger.LogInformation($"🐳 Deleting Docker container {database.ContainerId}");
-            await _dockerService.DeleteDatabaseAsync(database, user);
+            // ⭐ SOFT DELETE: Solo marcar como eliminada, NO eliminar físicamente
+            database.Status = DatabaseStatus.Deleted;
+            database.DeletedAt = DateTime.UtcNow;
 
-            // Eliminar de BD
-            _logger.LogInformation($"💾 Deleting database from repository");
-            await _databaseRepository.DeleteAsync(databaseId);
+            _logger.LogInformation($"💾 Marking database as deleted (30 days grace period)");
+            await _databaseRepository.UpdateAsync(database);
 
-            _logger.LogInformation($"✅ Database {database.Name} deleted successfully");
+            // ✅ CORREGIDO: Ahora _emailService SÍ existe
+            await _emailService.SendDatabaseDeletedEmailAsync(new DatabaseDeletedEmailDto
+            {
+                UserEmail = user.Email,
+                UserName = user.Email.Split('@')[0],
+                DatabaseName = database.DatabaseName,
+                Engine = database.Engine.ToString(),
+                DeletedAt = DateTime.UtcNow
+            });
+
+            _logger.LogInformation($"✅ Database {database.Name} marked as deleted (soft delete, will be permanently deleted after 30 days)");
 
             return true;
         }
@@ -197,72 +224,77 @@ namespace CrudCloudDb.Application.Services.Implementation
         }
 
         /// <summary>
-        /// Inicia un contenedor detenido
+        /// Restaura una base de datos marcada como eliminada (dentro del período de gracia de 30 días)
         /// </summary>
-        public async Task<bool> StartDatabaseAsync(Guid userId, Guid databaseId)
+        public async Task<bool> RestoreDatabaseAsync(Guid userId, Guid databaseId)
         {
-            _logger.LogInformation($"▶️ Starting database {databaseId}");
+            _logger.LogInformation($"♻️ Restoring database {databaseId} for user {userId}");
 
             var database = await _databaseRepository.GetByIdAsync(databaseId);
 
-            if (database == null || database.UserId != userId)
+            if (database == null)
             {
-                _logger.LogWarning($"⚠️ Database {databaseId} not found or access denied");
+                _logger.LogWarning($"⚠️ Database {databaseId} not found");
                 return false;
             }
 
-            var started = await _dockerService.StartContainerAsync(database.ContainerId);
-
-            if (started)
+            if (database.UserId != userId)
             {
-                _logger.LogInformation($"🔄 Updating database {databaseId} status to Running");
-                database.Status = DatabaseStatus.Running;
-                await _databaseRepository.UpdateAsync(database);
-                _logger.LogInformation($"✅ Database {database.Name} started successfully");
-            }
-            else
-            {
-                _logger.LogError($"❌ Failed to start database {databaseId}");
+                _logger.LogWarning($"⚠️ User {userId} tried to restore database {databaseId} owned by another user");
+                throw new UnauthorizedAccessException("You don't have access to this database");
             }
 
-            return started;
+            if (database.Status != DatabaseStatus.Deleted)
+            {
+                _logger.LogWarning($"⚠️ Database {databaseId} is not deleted, cannot restore");
+                return false;
+            }
+
+            // Verificar que no hayan pasado más de 30 días
+            if (database.DeletedAt.HasValue &&
+                (DateTime.UtcNow - database.DeletedAt.Value).TotalDays > 30)
+            {
+                _logger.LogWarning($"⚠️ Cannot restore database {databaseId}: grace period expired (more than 30 days)");
+                throw new InvalidOperationException("Cannot restore database: grace period expired (more than 30 days). The database will be permanently deleted soon.");
+            }
+
+            // Restaurar la base de datos
+            database.Status = DatabaseStatus.Running;
+            database.DeletedAt = null;
+
+            _logger.LogInformation($"💾 Restoring database status to Running");
+            await _databaseRepository.UpdateAsync(database);
+
+            _logger.LogInformation($"✅ Database {database.Name} restored successfully");
+
+            return true;
+        }
+
+        // ============================================
+        // MÉTODOS PRIVADOS
+        // ============================================
+        
+        /// <summary>
+        /// Obtiene el host configurado según el motor de base de datos
+        /// </summary>
+        private string GetDatabaseHost(DatabaseEngine engine)
+        {
+            var engineName = engine.ToString();
+            var host = _configuration[$"DatabaseHosts:{engineName}"];
+            
+            if (string.IsNullOrEmpty(host))
+            {
+                _logger.LogWarning($"⚠️ Host not configured for {engineName}, using localhost");
+                return "localhost";
+            }
+            
+            _logger.LogInformation($"🌐 Using host {host} for {engineName}");
+            return host;
         }
 
         /// <summary>
-        /// Detiene un contenedor en ejecución
+        /// Mapea una entidad DatabaseInstance a DTO
         /// </summary>
-        public async Task<bool> StopDatabaseAsync(Guid userId, Guid databaseId)
-        {
-            _logger.LogInformation($"⏸️ Stopping database {databaseId}");
-
-            var database = await _databaseRepository.GetByIdAsync(databaseId);
-
-            if (database == null || database.UserId != userId)
-            {
-                _logger.LogWarning($"⚠️ Database {databaseId} not found or access denied");
-                return false;
-            }
-
-            var stopped = await _dockerService.StopContainerAsync(database.ContainerId);
-
-            if (stopped)
-            {
-                _logger.LogInformation($"🔄 Updating database {databaseId} status to Stopped");
-                database.Status = DatabaseStatus.Stopped;
-                await _databaseRepository.UpdateAsync(database);
-                _logger.LogInformation($"✅ Database {database.Name} stopped successfully");
-            }
-            else
-            {
-                _logger.LogError($"❌ Failed to stop database {databaseId}");
-            }
-
-            return stopped;
-        }
-
-        // ============================================
-        // MÉTODO PRIVADO: Mapear entidad a DTO
-        // ============================================
         private DatabaseResponseDto MapToDto(DatabaseInstance db, bool? isRunning = null, bool checkRunning = true)
         {
             return new DatabaseResponseDto
@@ -272,7 +304,7 @@ namespace CrudCloudDb.Application.Services.Implementation
                 Engine = db.Engine.ToString(),
                 Status = db.Status.ToString(),
                 Port = db.Port,
-                Host = "localhost", // TODO: En producción cambiar a dominio real
+                Host = GetDatabaseHost(db.Engine),
                 Username = db.Username,
                 ConnectionString = db.ConnectionString,
                 CreatedAt = db.CreatedAt,
