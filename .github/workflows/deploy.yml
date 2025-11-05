@@ -39,7 +39,7 @@ jobs:
             docker run -d \
               --name crudclouddb_backend \
               --restart unless-stopped \
-              -p 5191:5191 \
+              --network host \
               -v /var/run/docker.sock:/var/run/docker.sock \
               -e ASPNETCORE_ENVIRONMENT=Production \
               -e ASPNETCORE_URLS=http://+:5191 \
