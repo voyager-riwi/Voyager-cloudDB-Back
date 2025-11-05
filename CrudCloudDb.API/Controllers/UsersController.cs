@@ -47,14 +47,17 @@ public class UsersController : ControllerBase
     {
         if (!ModelState.IsValid)
         {
+            _logger.LogError("Error de validación del modelo para [PUT /api/users/profile]. Errores: {@ModelStateErrors}", ModelState.Values.SelectMany(v => v.Errors));
             return BadRequest(ModelState);
         }
 
         var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        _logger.LogInformation("Petición recibida para [PUT /api/users/me] por el usuario con ID: {UserId}", userIdString);
+        
+        _logger.LogDebug("Iniciando actualización de perfil para usuario {UserIdString}. Datos de la petición: {@RequestData}", userIdString, request);
+
         if (!Guid.TryParse(userIdString, out var userId))
         {
-            _logger.LogWarning("El token para [PUT /api/users/me] contenía un ID de usuario con formato inválido: {UserIdString}", userIdString);
+            _logger.LogWarning("El token para [PUT /api/users/profile] contenía un ID de usuario con formato inválido: {UserIdString}", userIdString);
             return Unauthorized("Token de usuario inválido.");
         }
 
@@ -62,9 +65,11 @@ public class UsersController : ControllerBase
 
         if (result.Succeeded)
         {
+            _logger.LogInformation("Perfil del usuario {UserId} actualizado exitosamente.", userId);
             return Ok(result); 
         }
 
+        _logger.LogWarning("Fallo en la actualización del perfil para el usuario {UserId}. Razón: {FailureReason}", userId, result.Message);
         return BadRequest(result);
     }
     
@@ -73,12 +78,14 @@ public class UsersController : ControllerBase
     {
         if (!ModelState.IsValid)
         {
+            _logger.LogError("Error de validación del modelo para [POST /api/users/profile]. Errores: {@ModelStateErrors}", ModelState.Values.SelectMany(v => v.Errors));
             return BadRequest(ModelState);
         }
 
         var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(userIdString, out var userId))
         {
+            _logger.LogWarning("El token para [POST /api/users/change-password] contenía un ID de usuario con formato inválido: {UserIdString}", userIdString);
             return Unauthorized("Token de usuario inválido.");
         }
 
@@ -86,9 +93,10 @@ public class UsersController : ControllerBase
 
         if (result.Succeeded)
         {
+            _logger.LogInformation("Contraseña del usuario {UserId} actualizada exitosamente.", userId);
             return Ok(result);
         }
-            
+        _logger.LogWarning("Fallo en la actualización de la contraseña para el usuario {UserId}. Razón: {FailureReason}", userId, result.Message);
         return BadRequest(result);
     }
     
