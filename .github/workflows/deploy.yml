@@ -43,6 +43,24 @@ jobs:
               -v /var/run/docker.sock:/var/run/docker.sock \
               -e ASPNETCORE_ENVIRONMENT=Production \
               -e ASPNETCORE_URLS=http://+:5191 \
+              -e DB_HOST=${{ secrets.DB_HOST }} \
+              -e DB_PORT=${{ secrets.DB_PORT }} \
+              -e DB_NAME=${{ secrets.DB_NAME }} \
+              -e DB_USER=${{ secrets.DB_USER }} \
+              -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              -e JWT_SECRET=${{ secrets.JWT_SECRET }} \
+              -e JWT_ISSUER=CrudCloudDb.API \
+              -e JWT_AUDIENCE=CrudCloudDb.Frontend \
+              -e SMTP_SERVER=smtp.gmail.com \
+              -e SMTP_PORT=587 \
+              -e SMTP_SENDER_EMAIL=${{ secrets.SMTP_SENDER_EMAIL }} \
+              -e SMTP_SENDER_NAME=PotterCloud \
+              -e SMTP_USERNAME=${{ secrets.SMTP_USERNAME }} \
+              -e SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }} \
+              -e SMTP_ENABLE_SSL=true \
+              -e DB_HOST_POSTGRESQL=${{ secrets.DB_HOST_POSTGRESQL }} \
+              -e DB_HOST_MYSQL=${{ secrets.DB_HOST_MYSQL }} \
+              -e DB_HOST_MONGODB=${{ secrets.DB_HOST_MONGODB }} \
               crudclouddb-api:latest
             
             echo "⏳ Waiting for container..."

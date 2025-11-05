@@ -36,6 +36,29 @@ try
     // 4️⃣ Builder Initialization
     // =======================
     var builder = WebApplication.CreateBuilder(args);
+    
+    // =======================
+    // 4️⃣.1 Load Environment Variables from .env file (Development)
+    // =======================
+    if (builder.Environment.IsDevelopment())
+    {
+        var envFilePath = Path.Combine(Directory.GetCurrentDirectory(), "..", ".env");
+        if (File.Exists(envFilePath))
+        {
+            foreach (var line in File.ReadAllLines(envFilePath))
+            {
+                if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#"))
+                    continue;
+                
+                var parts = line.Split('=', 2, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 2)
+                {
+                    Environment.SetEnvironmentVariable(parts[0].Trim(), parts[1].Trim());
+                }
+            }
+            Log.Information("✅ Loaded .env file for development");
+        }
+    }
 
     // =======================
     // 5️⃣ Serilog Full Integration
@@ -61,7 +84,27 @@ try
     // =======================
     // 7️⃣ Database Configuration
     // =======================
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    // Leer variables de entorno con fallback a appsettings
+    var dbHost = Environment.GetEnvironmentVariable("DB_HOST") 
+                 ?? builder.Configuration["ConnectionStrings:Host"] 
+                 ?? "localhost";
+    var dbPort = Environment.GetEnvironmentVariable("DB_PORT") 
+                 ?? builder.Configuration["ConnectionStrings:Port"] 
+                 ?? "5432";
+    var dbName = Environment.GetEnvironmentVariable("DB_NAME") 
+                 ?? builder.Configuration["ConnectionStrings:Database"] 
+                 ?? "crud_cloud_db";
+    var dbUser = Environment.GetEnvironmentVariable("DB_USER") 
+                 ?? builder.Configuration["ConnectionStrings:Username"] 
+                 ?? "postgres";
+    var dbPassword = Environment.GetEnvironmentVariable("DB_PASSWORD") 
+                     ?? builder.Configuration["ConnectionStrings:Password"] 
+                     ?? "password";
+    
+    var connectionString = $"Host={dbHost};Database={dbName};Username={dbUser};Password={dbPassword};Port={dbPort}";
+    
+    Log.Information($"🗄️ Database: {dbUser}@{dbHost}:{dbPort}/{dbName}");
+    
     builder.Services.AddDbContext<ApplicationDbContext>(options =>
         options.UseNpgsql(connectionString)
             .UseSnakeCaseNamingConvention());

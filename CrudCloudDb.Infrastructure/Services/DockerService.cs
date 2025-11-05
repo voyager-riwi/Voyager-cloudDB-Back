@@ -239,9 +239,6 @@ namespace CrudCloudDb.Infrastructure.Services
             }
         }
 
-        /// <summary>
-        /// Elimina permanentemente una base de datos del contenedor maestro (después del período de gracia de 30 días)
-        /// </summary>
         public async Task PermanentlyDeleteDatabaseAsync(DatabaseEngine engine, string dbName, string username)
         {
             try
@@ -339,80 +336,110 @@ namespace CrudCloudDb.Infrastructure.Services
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // Dar permiso CONNECT
-            await using (var cmd = new NpgsqlCommand(
-                $"GRANT CONNECT ON DATABASE {dbName} TO {credentials.Username}", conn))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
-
-            // Cerrar conexión a postgres
-            await conn.CloseAsync();
-
-            // Abrir nueva conexión a la base de datos recién creada
-            var newConnString = $"Host={master.Host};Port={master.Port};Database={dbName};Username={master.AdminUsername};Password={master.AdminPassword}";
-            await using var newConn = new NpgsqlConnection(newConnString);
-            await newConn.OpenAsync();
-
-            // 🔒 PERMISOS RESTRINGIDOS: Solo operaciones básicas, NO DROP DATABASE
-
-            // 1. Dar acceso al schema public
-            await using (var cmd = new NpgsqlCommand(
-                $"GRANT USAGE ON SCHEMA public TO {credentials.Username}", newConn))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
-
-            // 2. Permitir SELECT, INSERT, UPDATE, DELETE en tablas existentes
-            await using (var cmd = new NpgsqlCommand(
-                $"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {credentials.Username}", newConn))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
-
-            // 3. Permitir uso de secuencias (para SERIAL/IDENTITY)
-            await using (var cmd = new NpgsqlCommand(
-                $"GRANT SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO {credentials.Username}", newConn))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
-
-            // 4. Permitir crear tablas pero NO eliminar la base de datos
-            await using (var cmd = new NpgsqlCommand(
-                $"GRANT CREATE ON SCHEMA public TO {credentials.Username}", newConn))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
-
-            // 5. Privilegios por defecto para tablas futuras
-            await using (var cmd = new NpgsqlCommand(
-                $"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {credentials.Username}", newConn))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
-
-            // 6. Privilegios por defecto para secuencias futuras
-            await using (var cmd = new NpgsqlCommand(
-                $"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, UPDATE ON SEQUENCES TO {credentials.Username}", newConn))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
-
-            // 7. ⚠️ IMPORTANTE: Evitar que vea otras bases de datos
-            await conn.OpenAsync(); // Reconectar a postgres para revocar permisos
+            // 🔒 BLOQUEO CRÍTICO: Revocar acceso a TODAS las bases de datos del sistema
             await using (var cmd = new NpgsqlCommand(
                 $"REVOKE CONNECT ON DATABASE postgres FROM {credentials.Username}", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            await using (var cmd2 = new NpgsqlCommand(
-                $"REVOKE CONNECT ON DATABASE template1 FROM {credentials.Username}", conn))
+            await using (var cmd = new NpgsqlCommand(
+                $"REVOKE CONNECT ON DATABASE template0 FROM {credentials.Username}", conn))
             {
-                await cmd2.ExecuteNonQueryAsync();
+                await cmd.ExecuteNonQueryAsync();
             }
 
-            _logger.LogInformation($"✅ PostgreSQL database {dbName} created with RESTRICTED permissions (no DROP DATABASE)");
+            await using (var cmd = new NpgsqlCommand(
+                $"REVOKE CONNECT ON DATABASE template1 FROM {credentials.Username}", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // 🔒 Revocar acceso a TODAS las otras bases de datos creadas
+            await using (var cmd = new NpgsqlCommand(
+                $"SELECT datname FROM pg_database WHERE datistemplate = false AND datname != '{dbName}'", conn))
+            {
+                await using var reader = await cmd.ExecuteReaderAsync();
+                var otherDatabases = new List<string>();
+                while (await reader.ReadAsync())
+                {
+                    otherDatabases.Add(reader.GetString(0));
+                }
+                await reader.CloseAsync();
+
+                // Revocar CONNECT de cada base de datos
+                foreach (var otherDb in otherDatabases)
+                {
+                    try
+                    {
+                        await using var revokeCmd = new NpgsqlCommand(
+                            $"REVOKE CONNECT ON DATABASE {otherDb} FROM {credentials.Username}", conn);
+                        await revokeCmd.ExecuteNonQueryAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning($"⚠️ Could not revoke access to {otherDb}: {ex.Message}");
+                    }
+                }
+            }
+
+            // Dar permiso CONNECT solo a SU base de datos
+            await using (var cmd = new NpgsqlCommand(
+                $"GRANT CONNECT ON DATABASE {dbName} TO {credentials.Username}", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            await conn.CloseAsync();
+
+            // Conectar a la base de datos específica para configurar permisos
+            var newConnString = $"Host={master.Host};Port={master.Port};Database={dbName};Username={master.AdminUsername};Password={master.AdminPassword}";
+            await using var newConn = new NpgsqlConnection(newConnString);
+            await newConn.OpenAsync();
+
+            // Dar acceso al schema public
+            await using (var cmd = new NpgsqlCommand(
+                $"GRANT USAGE ON SCHEMA public TO {credentials.Username}", newConn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // Permitir SELECT, INSERT, UPDATE, DELETE en tablas existentes
+            await using (var cmd = new NpgsqlCommand(
+                $"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {credentials.Username}", newConn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // Permitir uso de secuencias
+            await using (var cmd = new NpgsqlCommand(
+                $"GRANT SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO {credentials.Username}", newConn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // Permitir crear tablas
+            await using (var cmd = new NpgsqlCommand(
+                $"GRANT CREATE ON SCHEMA public TO {credentials.Username}", newConn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // Privilegios por defecto para tablas futuras
+            await using (var cmd = new NpgsqlCommand(
+                $"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {credentials.Username}", newConn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // Privilegios por defecto para secuencias futuras
+            await using (var cmd = new NpgsqlCommand(
+                $"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, UPDATE ON SEQUENCES TO {credentials.Username}", newConn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            _logger.LogInformation($"✅ PostgreSQL database {dbName} created with ISOLATED access (no visibility to other DBs)");
         }
 
         private async Task CreateMySQLDatabaseAsync(
@@ -425,20 +452,20 @@ namespace CrudCloudDb.Infrastructure.Services
             await using var conn = new MySqlConnection(connString);
             await conn.OpenAsync();
 
+            // Crear base de datos
             await using (var cmd = new MySqlCommand($"CREATE DATABASE {dbName}", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
+            // Crear usuario
             await using (var cmd = new MySqlCommand(
                 $"CREATE USER '{credentials.Username}'@'%' IDENTIFIED BY '{credentials.Password}'", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // 🔒 PERMISOS RESTRINGIDOS: Solo operaciones básicas, NO DROP DATABASE
-            // Permisos: SELECT, INSERT, UPDATE, DELETE, CREATE, INDEX, ALTER
-            // NO se dan: DROP, GRANT, SUPER, FILE, PROCESS, RELOAD, SHUTDOWN, etc.
+            // 🔒 PERMISOS SOLO EN SU BASE DE DATOS (no puede ver ni acceder a otras)
             await using (var cmd = new MySqlCommand(
                 $"GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, INDEX, ALTER, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, TRIGGER, REFERENCES ON {dbName}.* TO '{credentials.Username}'@'%'", conn))
             {
@@ -450,7 +477,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            _logger.LogInformation($"✅ MySQL database {dbName} created with RESTRICTED permissions (no DROP DATABASE)");
+            _logger.LogInformation($"✅ MySQL database {dbName} created with ISOLATED access (no visibility to other DBs)");
         }
 
         private async Task CreateMongoDBDatabaseAsync(
@@ -463,9 +490,8 @@ namespace CrudCloudDb.Infrastructure.Services
             var client = new MongoClient(connString);
             var adminDb = client.GetDatabase("admin");
 
-            // 🔒 PERMISOS RESTRINGIDOS: readWrite + dbAdmin pero NO root ni dbOwner
-            // readWrite: Permite leer/escribir datos
-            // dbAdmin: Permite crear índices, ver stats, pero NO eliminar la BD
+            // 🔒 PERMISOS SOLO EN SU BASE DE DATOS
+            // readWrite + dbAdmin solo para SU base de datos
             var command = new MongoDB.Bson.BsonDocument
             {
                 { "createUser", credentials.Username },
@@ -488,7 +514,7 @@ namespace CrudCloudDb.Infrastructure.Services
 
             await adminDb.RunCommandAsync<MongoDB.Bson.BsonDocument>(command);
 
-            _logger.LogInformation($"✅ MongoDB database {dbName} created with RESTRICTED permissions (readWrite + dbAdmin, no DROP DATABASE)");
+            _logger.LogInformation($"✅ MongoDB database {dbName} created with ISOLATED access (readWrite + dbAdmin only on {dbName})");
         }
 
         private async Task DeleteDatabaseInsideMasterAsync(
@@ -681,9 +707,12 @@ namespace CrudCloudDb.Infrastructure.Services
             string dbName,
             CredentialsResult credentials)
         {
-            // Obtener host desde configuración
             var engineName = engine.ToString();
-            var host = _configuration[$"DatabaseHosts:{engineName}"];
+            
+            // Leer desde variables de entorno primero, luego appsettings
+            var envVarName = $"DB_HOST_{engineName.ToUpperInvariant()}";
+            var host = Environment.GetEnvironmentVariable(envVarName)
+                      ?? _configuration[$"DatabaseHosts:{engineName}"];
 
             if (string.IsNullOrEmpty(host))
             {
