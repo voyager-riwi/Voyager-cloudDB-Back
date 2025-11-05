@@ -1,4 +1,4 @@
-﻿using CrudCloudDb.Application.Services.Interfaces;
+﻿﻿using CrudCloudDb.Application.Services.Interfaces;
 using CrudCloudDb.Application.DTOs.Email;
 using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Core.Entities;
@@ -38,32 +38,45 @@ namespace CrudCloudDb.Infrastructure.Services
             // Configuración de zona horaria
             _timeZoneId = configuration["TimeZoneSettings:TimeZoneId"] ?? "SA Pacific Standard Time";
 
-            // ⭐ Sintaxis correcta con valores por defecto
-            _smtpServer = configuration["EmailSettings:SmtpServer"]
-                          ?? throw new InvalidOperationException("EmailSettings:SmtpServer is not configured.");
+            // Leer configuración SMTP desde variables de entorno (prioritario) o appsettings (fallback)
+            _smtpServer = Environment.GetEnvironmentVariable("SMTP_SERVER")
+                          ?? configuration["EmailSettings:SmtpServer"]
+                          ?? throw new InvalidOperationException("SMTP_SERVER is not configured.");
     
-            // ⭐ GetValue necesita el valor por defecto como segundo parámetro
-            var smtpPortString = configuration["EmailSettings:SmtpPort"];
-            _smtpPort = !string.IsNullOrEmpty(smtpPortString) 
-                ? int.Parse(smtpPortString) 
-                : 587;
+            var smtpPortEnv = Environment.GetEnvironmentVariable("SMTP_PORT");
+            var smtpPortConfig = configuration["EmailSettings:SmtpPort"];
+            _smtpPort = !string.IsNullOrEmpty(smtpPortEnv) 
+                ? int.Parse(smtpPortEnv)
+                : !string.IsNullOrEmpty(smtpPortConfig) 
+                    ? int.Parse(smtpPortConfig) 
+                    : 587;
     
-            _senderEmail = configuration["EmailSettings:SenderEmail"]
-                           ?? throw new InvalidOperationException("EmailSettings:SenderEmail is not configured.");
+            _senderEmail = Environment.GetEnvironmentVariable("SMTP_SENDER_EMAIL")
+                           ?? configuration["EmailSettings:SenderEmail"]
+                           ?? throw new InvalidOperationException("SMTP_SENDER_EMAIL is not configured.");
     
-            _senderName = configuration["EmailSettings:SenderName"] ?? "PotterCloud";
+            _senderName = Environment.GetEnvironmentVariable("SMTP_SENDER_NAME")
+                          ?? configuration["EmailSettings:SenderName"] 
+                          ?? "PotterCloud";
     
-            _username = configuration["EmailSettings:Username"]
-                        ?? throw new InvalidOperationException("EmailSettings:Username is not configured.");
+            _username = Environment.GetEnvironmentVariable("SMTP_USERNAME")
+                        ?? configuration["EmailSettings:Username"]
+                        ?? throw new InvalidOperationException("SMTP_USERNAME is not configured.");
     
-            _password = configuration["EmailSettings:Password"]
-                        ?? throw new InvalidOperationException("EmailSettings:Password is not configured.");
+            _password = Environment.GetEnvironmentVariable("SMTP_PASSWORD")
+                        ?? configuration["EmailSettings:Password"]
+                        ?? throw new InvalidOperationException("SMTP_PASSWORD is not configured.");
     
-            // ⭐ Para bool también
-            var enableSslString = configuration["EmailSettings:EnableSsl"];
-            _enableSsl = !string.IsNullOrEmpty(enableSslString) 
-                ? bool.Parse(enableSslString) 
-                : true;
+            var enableSslEnv = Environment.GetEnvironmentVariable("SMTP_ENABLE_SSL");
+            var enableSslConfig = configuration["EmailSettings:EnableSsl"];
+            _enableSsl = !string.IsNullOrEmpty(enableSslEnv)
+                ? bool.Parse(enableSslEnv)
+                : !string.IsNullOrEmpty(enableSslConfig) 
+                    ? bool.Parse(enableSslConfig) 
+                    : true;
+            
+            // Log de configuración (sin mostrar password)
+            _logger.LogInformation($"📧 Email configured: {_username} via {_smtpServer}:{_smtpPort}");
         }
 
         /// <summary>
