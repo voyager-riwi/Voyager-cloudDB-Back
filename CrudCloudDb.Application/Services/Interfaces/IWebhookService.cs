@@ -2,5 +2,5 @@
 
 public interface IWebhookService
 {
-    
+    Task SendErrorNotificationAsync(Exception exception, string contextMessage);
 }
