@@ -28,14 +28,15 @@ jobs:
             git fetch origin deployment/docker-nginx
             git reset --hard origin/deployment/docker-nginx
             
-            echo "🛑 Stopping current container..."
+            echo "🛑 Stopping current containers..."
             docker stop crudclouddb_backend || true
             docker rm crudclouddb_backend || true
+            docker-compose down || true
             
             echo "🔨 Building Docker image..."
             docker build -t crudclouddb-api:latest .
             
-            echo "▶️  Starting container..."
+            echo "▶️  Starting backend container..."
             docker run -d \
               --name crudclouddb_backend \
               --restart unless-stopped \
@@ -66,27 +67,41 @@ jobs:
               -e MERCADOPAGO_PUBLIC_KEY=${{ secrets.MERCADOPAGO_PUBLIC_KEY }} \
               crudclouddb-api:latest
             
-            echo "⏳ Waiting for container..."
+            echo "⏳ Waiting for backend..."
             sleep 5
             
             if docker ps | grep -q crudclouddb_backend; then
-              echo "✅ Container running!"
+              echo "✅ Backend container running!"
               
-              echo "🏥 Testing endpoint..."
-              curl -f http://localhost:5191/health || echo "⚠️ Health check failed"
+              echo "🏥 Testing backend endpoint..."
+              curl -f http://localhost:5191/health || echo "⚠️ Backend health check failed"
               
             else
-              echo "❌ Container failed!"
+              echo "❌ Backend container failed!"
               docker logs crudclouddb_backend
               exit 1
             fi
             
-            echo "🧹 Cleaning up..."
+            echo "🌐 Starting NGINX..."
+            docker-compose up -d
+            
+            echo "⏳ Waiting for NGINX..."
+            sleep 3
+            
+            echo "🏥 Testing via NGINX (port 80)..."
+            curl -f http://localhost/health || echo "⚠️ NGINX health check failed"
+            
+            echo "🧹 Cleaning up old images..."
             docker image prune -f
             
-            echo "📋 Recent logs:"
+            echo "📋 Recent backend logs:"
             docker logs --tail 30 crudclouddb_backend
             
+            echo "📊 Container status:"
+            docker ps | grep -E "crudclouddb_backend|voyager-backend-nginx"
+            
             echo "========================================="
-            echo "✅ Backend deployed!"
-            echo "🌐 API: http://service.voyager.andrescortes.dev"
+            echo "✅ Deployment completed successfully!"
+            echo "🌐 Backend API: http://service.voyager.andrescortes.dev"
+            echo "📚 Swagger: http://service.voyager.andrescortes.dev/swagger"
+            echo "🏥 Health: http://service.voyager.andrescortes.dev/health"
