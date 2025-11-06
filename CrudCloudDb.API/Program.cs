@@ -3,6 +3,7 @@
 // =======================
 using System.Text;
 using CrudCloudDb.API.Configuration;
+using CrudCloudDb.API.Middleware;
 using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Application.Services.Implementation;
 using CrudCloudDb.Application.Services.Interfaces;
@@ -133,12 +134,10 @@ try
     var urlTest = builder.Configuration.GetSection("WeebhookSettings")["DiscordUrl"];
 
 // Si estás en .NET 6/7, puedes usar Console.WriteLine en Program.cs
-    Console.WriteLine($"DEBUG CONFIG CHECK: La URL leída directamente es: {urlTest}");
     
     builder.Services.AddHttpClient();
     builder.Services.Configure<WebhookSettings>(builder.Configuration.GetSection("WeebhookSettings"));
     builder.Services.AddScoped<IWebhookService, WebhookService>();
-    Console.WriteLine($"DEBUG CONFIG CHECK: La URL leída directamente es: {urlTest}");
     
     
     // =======================
@@ -200,6 +199,7 @@ try
     // 1️⃣3️⃣ Middleware Configuration
     // =======================
     app.UseCors("AllowAll");
+    app.UseMiddleware<ErrorHandlingMiddleware>();
 
     if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
     {
