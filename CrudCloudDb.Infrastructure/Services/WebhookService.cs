@@ -1,11 +1,15 @@
+using CrudCloudDb.Application.Configuration;
 using CrudCloudDb.Application.DTOs.Webhook;
 using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Application.Services.Interfaces;
 using CrudCloudDb.Core.Enums;
 using MercadoPago.Client.MerchantOrder;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System;
 using System.Linq;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace CrudCloudDb.Infrastructure.Services;
@@ -17,19 +21,25 @@ public class WebhookService : IWebhookService
     private readonly IPlanRepository _planRepository;
     private readonly ISubscriptionRepository _subscriptionRepository;
     private readonly Application.Interfaces.Repositories.IDatabaseInstanceRepository _db;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly WebhookSettings _webhookSettings;
 
     public WebhookService(
         ILogger<WebhookService> logger,
         IUserRepository userRepository,
         IPlanRepository planRepository,
         ISubscriptionRepository subscriptionRepository,
-         Application.Interfaces.Repositories.IDatabaseInstanceRepository db)
+        Application.Interfaces.Repositories.IDatabaseInstanceRepository db,
+        IHttpClientFactory httpClientFactory,
+        IOptions<WebhookSettings> webhookSettings)
     {
         _logger = logger;
         _userRepository = userRepository;
         _planRepository = planRepository;
         _subscriptionRepository = subscriptionRepository;
         _db = db;
+        _httpClientFactory = httpClientFactory;
+        _webhookSettings = webhookSettings.Value;
     }
 
     public async Task ProcessMercadoPagoNotificationAsync(MercadoPagoNotification notification)
@@ -88,6 +98,74 @@ public class WebhookService : IWebhookService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error al procesar la notificación de Mercado Pago para el recurso {Resource}", notification.Resource);
+        }
+    }
+
+    public async Task SendErrorNotificationAsync(Exception exception, string contextMessage)
+    {
+        Console.WriteLine("Url de discord: " + _webhookSettings.DiscordUrl);
+        
+        if (string.IsNullOrEmpty(_webhookSettings.DiscordUrl))
+        {
+            Console.WriteLine(_webhookSettings.DiscordUrl);
+            _logger.LogWarning("La URL del webhook de Discord para errores no está configurada.");
+            return;
+        }
+
+        var httpClient = _httpClientFactory.CreateClient();
+        
+        var payload = new
+        {
+            username = "API Error Bot",
+            embeds = new[]
+            {
+                new
+                {
+                    title = "Error inesperado en la API",
+                    description = $"**Contexto:** {contextMessage}",
+                    color = 15548997, 
+                    fields = new[] 
+                    {
+                        new { name = "Tipo de Error", value = exception.GetType().Name, inline = true },
+                        new { name = "Mensaje", value = exception.Message, inline = false },
+                        new
+                        {
+                            name = "StarkTrace (resumido)",
+                            value = $"```\n{((exception.StackTrace ?? "No stack trace").Length > 1000 ? (exception.StackTrace ?? "No stack trace")[..1000] : (exception.StackTrace ?? "No stack trace"))}\n```",
+                            inline = false
+                        }
+                    },
+                    footer = new { text = $"TimeStamp: {DateTime.UtcNow}" }
+                }   
+            }
+        };
+        
+        var jsonPayload = JsonSerializer.Serialize(payload);
+        var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+        
+        try
+        {
+            var response = await httpClient.PostAsync(_webhookSettings.DiscordUrl, content);
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorResponse = await response.Content.ReadAsStringAsync();
+                
+                _logger.LogError(
+                    "Fallo el envio del webhook a Discord. Codigo de status: {StatusCode}, Razon: {Reason}. Respuesta de Discord: {ErrorResponse}", 
+                    response.StatusCode, 
+                    response.ReasonPhrase,
+                    errorResponse 
+                );
+            }
+            else
+            {
+                _logger.LogInformation("Webhook de error enviado a Discord con éxito.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ocurrio una excepcion al intentar enviar el webhook de error al servidor.");
         }
     }
 }

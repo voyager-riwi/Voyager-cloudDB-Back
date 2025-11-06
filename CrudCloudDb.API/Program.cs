@@ -2,6 +2,7 @@
 // 1️⃣ Using Statements
 // =======================
 using System.Text;
+using CrudCloudDb.API.Configuration;
 using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Application.Services.Implementation;
 using CrudCloudDb.Application.Services.Interfaces;
@@ -15,6 +16,8 @@ using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
 using MercadoPago.Config; 
+using CrudCloudDb.Application.Configuration;
+
 
 // =======================
 // 2️⃣ Serilog Bootstrap Configuration
@@ -124,7 +127,20 @@ try
     builder.Services.AddScoped<IPortManagerService, PortManagerService>();
     builder.Services.AddScoped<ICredentialService, CredentialService>();
     
+    // =======================
+    // 9️⃣ Webhook configuration
+    // =======================
+    var urlTest = builder.Configuration.GetSection("WeebhookSettings")["DiscordUrl"];
 
+// Si estás en .NET 6/7, puedes usar Console.WriteLine en Program.cs
+    Console.WriteLine($"DEBUG CONFIG CHECK: La URL leída directamente es: {urlTest}");
+    
+    builder.Services.AddHttpClient();
+    builder.Services.Configure<WebhookSettings>(builder.Configuration.GetSection("WeebhookSettings"));
+    builder.Services.AddScoped<IWebhookService, WebhookService>();
+    Console.WriteLine($"DEBUG CONFIG CHECK: La URL leída directamente es: {urlTest}");
+    
+    
     // =======================
     // 🔟 Controllers Configuration
     // =======================
