@@ -1,71 +1,110 @@
-name: 🚀 Deploy Backend to Production
+name: Deploy Vue Frontend to Server
 
 on:
   push:
     branches:
-      - deployment/docker-nginx
+      - main
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    name: Deploy Backend to service.voyager.andrescortes.dev
-    
+
     steps:
-      - name: 🚀 Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.0
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create environment file
+        run: |
+          cat > .env << EOF
+          VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
+          VITE_APP_NAME=${{ secrets.VITE_APP_NAME }}
+          VITE_APP_VERSION=${{ secrets.VITE_APP_VERSION }}
+          VITE_API_TIMEOUT=${{ secrets.VITE_API_TIMEOUT }}
+          VITE_DEBUG=${{ secrets.VITE_DEBUG }}
+          EOF
+
+      - name: Build application
+        run: npm run build
+
+      - name: Verify build
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "❌ Build failed - dist folder not found"
+            exit 1
+          fi
+
+      - name: Compress build artifacts
+        run: tar -czf dist.tar.gz dist Dockerfile .dockerignore
+
+      - name: Test SSH connection
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: echo "✅ SSH connection successful"
+
+      - name: Copy files to remote server
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
+          source: 'dist.tar.gz'
+          target: '/root/app'
+          overwrite: true
+
+      - name: Deploy on remote server
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            echo "📦 Starting backend deployment..."
-            echo "========================================="
+            set -e  # Exit on error
+            cd /root/app
             
-            cd ~/Voyager-cloudDB-Back
-            
-            echo "⬇️  Pulling latest code..."
-            git fetch origin deployment/docker-nginx
-            git reset --hard origin/deployment/docker-nginx
-            
-            echo "🛑 Stopping current container..."
-            docker stop crudclouddb_backend || true
-            docker rm crudclouddb_backend || true
-            
-            echo "🔨 Building Docker image..."
-            docker build -t crudclouddb-api:latest .
-            
-            echo "▶️  Starting container..."
-            docker run -d \
-              --name crudclouddb_backend \
-              --restart unless-stopped \
-              -p 5191:5191 \
-              -v /var/run/docker.sock:/var/run/docker.sock \
-              -e ASPNETCORE_ENVIRONMENT=Production \
-              -e ASPNETCORE_URLS=http://+:5191 \
-              crudclouddb-api:latest
-            
-            echo "⏳ Waiting for container..."
-            sleep 5
-            
-            if docker ps | grep -q crudclouddb_backend; then
-              echo "✅ Container running!"
-              
-              echo "🏥 Testing endpoint..."
-              curl -f http://localhost:5191/health || echo "⚠️ Health check failed"
-              
-            else
-              echo "❌ Container failed!"
-              docker logs crudclouddb_backend
-              exit 1
+            # Backup existing deployment
+            if [ -d "dist" ]; then
+              echo "📦 Creating backup..."
+              tar -czf dist-backup-$(date +%Y%m%d-%H%M%S).tar.gz dist
             fi
             
+            echo "🚀 Deploying new version..."
+            tar -xzf dist.tar.gz --overwrite
+            
+            echo "🐳 Building Docker image..."
+            docker stop frontend || true
+            docker rm frontend || true
+            docker build -t vue-frontend .
+            
+            echo "🎯 Starting container..."
+            docker run -d \
+              -p 80:80 \
+              --name frontend \
+              --restart unless-stopped \
+              vue-frontend
+            
+            # Cleanup
             echo "🧹 Cleaning up..."
-            docker image prune -f
+            docker system prune -f
             
-            echo "📋 Recent logs:"
-            docker logs --tail 30 crudclouddb_backend
-            
-            echo "========================================="
-            echo "✅ Backend deployed!"
-            echo "🌐 API: http://service.voyager.andrescortes.dev"
+            echo "✅ Deployment completed successfully!"
