@@ -9,6 +9,8 @@ using CrudCloudDb.Application.Services.Interfaces;
 using CrudCloudDb.Infrastructure.Data;
 using CrudCloudDb.Infrastructure.Services;
 using CrudCloudDb.Infrastructure.Repositories;
+using CrudCloudDb.Core.Entities;
+using CrudCloudDb.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -131,9 +133,9 @@ try
     {
         var jwtSettings = builder.Configuration.GetSection("JwtSettings");
         var secret = jwtSettings["Secret"];
-        if (secret == null) 
+        if (secret == null)
             throw new ArgumentNullException(nameof(secret), "JWT Secret not configured.");
-        
+
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -238,6 +240,88 @@ try
     // 1️⃣2️⃣ Build App
     // =======================
     var app = builder.Build();
+
+    // =======================
+    // 🌱 Database Initialization & Seeding
+    // =======================
+    using (var scope = app.Services.CreateScope())
+    {
+        var services = scope.ServiceProvider;
+        try
+        {
+            var dbContext = services.GetRequiredService<ApplicationDbContext>();
+            var logger = services.GetRequiredService<ILogger<Program>>();
+
+            logger.LogInformation("🌱 Initializing database data...");
+
+            // Crear planes si no existen
+            if (!dbContext.Plans.Any())
+            {
+                logger.LogInformation("📋 Creating default plans...");
+
+                var freePlan = new Plan
+                {
+                    Id = Guid.NewGuid(),
+                    PlanType = PlanType.Free,
+                    Name = "Free Plan",
+                    Price = 0,
+                    DatabaseLimitPerEngine = 2
+                };
+
+                var premiumPlan = new Plan
+                {
+                    Id = Guid.NewGuid(),
+                    PlanType = PlanType.Advanced,
+                    Name = "Premium Plan",
+                    Price = 9.99m,
+                    DatabaseLimitPerEngine = 5
+                };
+
+                dbContext.Plans.AddRange(freePlan, premiumPlan);
+                await dbContext.SaveChangesAsync();
+
+                logger.LogInformation("✅ Plans created: Free (2 DBs/engine), Premium (5 DBs/engine)");
+            }
+
+            // Asignar plan Free a usuarios sin plan
+            var freePlanId = dbContext.Plans.FirstOrDefault(p => p.PlanType == PlanType.Free)?.Id;
+            if (freePlanId.HasValue)
+            {
+                // Obtener IDs de planes válidos
+                var validPlanIds = dbContext.Plans.Select(p => p.Id).ToList();
+                
+                // Buscar usuarios sin plan válido (CurrentPlanId no está en la lista de planes válidos)
+                var usersWithoutPlan = dbContext.Users
+                    .Where(u => !validPlanIds.Contains(u.CurrentPlanId))
+                    .ToList();
+                
+                if (usersWithoutPlan.Any())
+                {
+                    logger.LogInformation($"👥 Assigning Free plan to {usersWithoutPlan.Count} user(s) without valid plan...");
+                    
+                    foreach (var user in usersWithoutPlan)
+                    {
+                        logger.LogInformation($"   - Assigning Free plan to user: {user.Email} (CurrentPlanId was: {user.CurrentPlanId})");
+                        user.CurrentPlanId = freePlanId.Value;
+                    }
+                    
+                    await dbContext.SaveChangesAsync();
+                    logger.LogInformation($"✅ Free plan assigned to {usersWithoutPlan.Count} user(s)");
+                }
+                else
+                {
+                    logger.LogInformation("ℹ️ All users already have valid plans assigned");
+                }
+            }
+
+            logger.LogInformation("✅ Database initialization completed");
+        }
+        catch (Exception ex)
+        {
+            var logger = services.GetRequiredService<ILogger<Program>>();
+            logger.LogError(ex, "❌ Error during database initialization");
+        }
+    }
 
     // =======================
     // 1️⃣3️⃣ Middleware Configuration

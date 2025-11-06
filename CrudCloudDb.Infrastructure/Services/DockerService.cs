@@ -283,6 +283,20 @@ namespace CrudCloudDb.Infrastructure.Services
             }
         }
 
+        public async Task<MasterContainerInfo?> GetMasterContainerInfoAsync(DatabaseEngine engine)
+        {
+            return await _masterContainerService.GetMasterContainerInfoAsync(engine);
+        }
+
+        public async Task ResetPasswordInMasterAsync(
+            MasterContainerInfo masterContainer,
+            string username,
+            string newPassword,
+            DatabaseEngine engine)
+        {
+            await ResetPasswordInsideMasterAsync(masterContainer, username, newPassword, engine);
+        }
+
         // ============================================
         // MÉTODOS PRIVADOS
         // ============================================
@@ -319,50 +333,23 @@ namespace CrudCloudDb.Infrastructure.Services
         {
             var connString = $"Host={master.Host};Port={master.Port};Database=postgres;Username={master.AdminUsername};Password={master.AdminPassword}";
 
-            // --- PASO 1: Conectar a postgres y obtener todas las bases de datos ---
-            var allDatabases = new List<string>();
-            await using (var conn = new NpgsqlConnection(connString))
-            {
-                await conn.OpenAsync();
-                await using (var cmd = new NpgsqlCommand("SELECT datname FROM pg_database WHERE datallowconn = true", conn))
-                {
-                    await using var reader = await cmd.ExecuteReaderAsync();
-                    while (await reader.ReadAsync())
-                    {
-                        allDatabases.Add(reader.GetString(0));
-                    }
-                }
-            }
+            // ⭐ OPTIMIZACIÓN: Solo revocar permisos en bases de datos del sistema
+            // No necesitamos iterar sobre TODAS las bases de datos de prueba
+            var systemDatabases = new List<string> { "postgres", "template1" }; // template0 no permite conexión
 
-            // --- PASO 2: REVOCAR PERMISOS GLOBALES DEL ROL PUBLIC (AGRESIVO) ---
+            // --- PASO 1: REVOCAR PERMISOS GLOBALES DEL ROL PUBLIC (UNA SOLA VEZ) ---
             await using (var conn = new NpgsqlConnection(connString))
             {
                 await conn.OpenAsync();
 
-                // 🔑 CLAVE: Revocar SELECT en pg_database para PUBLIC
-                // Esto impide que cualquier usuario vea el catálogo de bases de datos
+                // 🔑 REVOCAR SELECT en pg_database para PUBLIC (una sola vez)
                 try
                 {
                     await using var cmd = new NpgsqlCommand("REVOKE SELECT ON pg_database FROM PUBLIC", conn);
                     await cmd.ExecuteNonQueryAsync();
                     _logger.LogInformation("🔒 Revoked SELECT on pg_database from PUBLIC");
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning($"⚠️ Could not revoke SELECT on pg_database from PUBLIC: {ex.Message}");
-                }
-
-                // Revocar SELECT en information_schema.schemata
-                try
-                {
-                    await using var cmd = new NpgsqlCommand("REVOKE SELECT ON information_schema.schemata FROM PUBLIC", conn);
-                    await cmd.ExecuteNonQueryAsync();
-                    _logger.LogInformation("🔒 Revoked SELECT on information_schema.schemata from PUBLIC");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning($"⚠️ Could not revoke SELECT on information_schema: {ex.Message}");
-                }
+                catch { } // Ya revocado anteriormente
 
                 // Crear el usuario con restricciones máximas
                 await using (var cmd = new NpgsqlCommand($"CREATE USER {credentials.Username} WITH PASSWORD '{credentials.Password}' NOCREATEDB NOCREATEROLE NOSUPERUSER NOREPLICATION NOBYPASSRLS", conn))
@@ -370,33 +357,11 @@ namespace CrudCloudDb.Infrastructure.Services
                     await cmd.ExecuteNonQueryAsync();
                 }
 
-                // 🔑 CLAVE: Revocar SELECT en pg_database para el usuario específico
-                // Esto asegura que el usuario NO vea otras bases de datos
-                try
+                // 🔑 Revocar SELECT en pg_database para el usuario específico
+                await using (var cmd = new NpgsqlCommand($"REVOKE SELECT ON pg_database FROM {credentials.Username}", conn))
                 {
-                    await using var cmd = new NpgsqlCommand($"REVOKE SELECT ON pg_database FROM {credentials.Username}", conn);
                     await cmd.ExecuteNonQueryAsync();
                     _logger.LogInformation($"🔒 Revoked SELECT on pg_database from {credentials.Username}");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning($"⚠️ Could not revoke SELECT on pg_database from user: {ex.Message}");
-                }
-
-                // Revocar CONNECT en bases de datos del sistema
-                await using (var cmd = new NpgsqlCommand($"REVOKE CONNECT ON DATABASE postgres FROM PUBLIC", conn))
-                {
-                    await cmd.ExecuteNonQueryAsync();
-                }
-
-                await using (var cmd = new NpgsqlCommand($"REVOKE CONNECT ON DATABASE template0 FROM PUBLIC", conn))
-                {
-                    await cmd.ExecuteNonQueryAsync();
-                }
-
-                await using (var cmd = new NpgsqlCommand($"REVOKE CONNECT ON DATABASE template1 FROM PUBLIC", conn))
-                {
-                    await cmd.ExecuteNonQueryAsync();
                 }
 
                 // Crear la base de datos
@@ -405,51 +370,39 @@ namespace CrudCloudDb.Infrastructure.Services
                     await cmd.ExecuteNonQueryAsync();
                 }
 
-                _logger.LogInformation($"✅ Created user {credentials.Username} and database {dbName} with SELECT restriction on pg_database");
+                _logger.LogInformation($"✅ Created user {credentials.Username} and database {dbName}");
             }
 
-            // --- PASO 3: REVOCAR ACCESO DE ESTE USUARIO A TODAS LAS OTRAS BASES DE DATOS ---
-            foreach (var existingDb in allDatabases)
+            // --- PASO 2: REVOCAR ACCESO SOLO EN BASES DE DATOS DEL SISTEMA ---
+            // Esto es mucho más rápido que iterar sobre todas las DBs de prueba
+            foreach (var systemDb in systemDatabases)
             {
-                if (existingDb == dbName) continue; // Skip la nueva DB
-
                 try
                 {
-                    var tempConnString = $"Host={master.Host};Port={master.Port};Database={existingDb};Username={master.AdminUsername};Password={master.AdminPassword}";
+                    var tempConnString = $"Host={master.Host};Port={master.Port};Database={systemDb};Username={master.AdminUsername};Password={master.AdminPassword}";
                     await using var tempConn = new NpgsqlConnection(tempConnString);
                     await tempConn.OpenAsync();
 
-                    // Revocar TODOS los permisos en esta base de datos
-                    await using (var cmd = new NpgsqlCommand($"REVOKE ALL ON DATABASE {existingDb} FROM {credentials.Username}", tempConn))
+                    // Revocar permisos en esta base de datos del sistema
+                    await using (var cmd = new NpgsqlCommand($"REVOKE ALL ON DATABASE {systemDb} FROM {credentials.Username}", tempConn))
                     {
                         await cmd.ExecuteNonQueryAsync();
                     }
 
-                    // Revocar permisos en todos los esquemas de esta DB
                     await using (var cmd = new NpgsqlCommand($"REVOKE ALL ON SCHEMA public FROM {credentials.Username}", tempConn))
                     {
                         await cmd.ExecuteNonQueryAsync();
                     }
 
-                    await using (var cmd = new NpgsqlCommand($"REVOKE ALL ON SCHEMA information_schema FROM {credentials.Username}", tempConn))
-                    {
-                        await cmd.ExecuteNonQueryAsync();
-                    }
-
-                    await using (var cmd = new NpgsqlCommand($"REVOKE ALL ON SCHEMA pg_catalog FROM {credentials.Username}", tempConn))
-                    {
-                        await cmd.ExecuteNonQueryAsync();
-                    }
-
-                    _logger.LogInformation($"🔒 Revoked all access to database: {existingDb}");
+                    _logger.LogInformation($"🔒 Revoked access to system database: {systemDb}");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning($"⚠️ Could not revoke access to {existingDb}: {ex.Message}");
+                    _logger.LogWarning($"⚠️ Could not revoke access to {systemDb}: {ex.Message}");
                 }
             }
 
-            // --- PASO 4: OTORGAR PERMISOS SOLO EN SU BASE DE DATOS ---
+            // --- PASO 3: OTORGAR PERMISOS SOLO EN SU BASE DE DATOS ---
             var newDbConnString = $"Host={master.Host};Port={master.Port};Database={dbName};Username={master.AdminUsername};Password={master.AdminPassword}";
             await using (var newDbConn = new NpgsqlConnection(newDbConnString))
             {
@@ -481,33 +434,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 _logger.LogInformation($"✅ Granted permissions on database {dbName}");
             }
 
-            // --- PASO 5: CREAR UNA VISTA PERSONALIZADA PARA pg_database (EXPERIMENTAL) ---
-            try
-            {
-                await using var conn = new NpgsqlConnection(newDbConnString);
-                await conn.OpenAsync();
-
-                // Crear una función que solo muestre la DB del usuario
-                var customViewSql = $@"
-                CREATE OR REPLACE VIEW user_databases AS 
-                SELECT datname, datdba, encoding, datcollate, datctype, datistemplate, datallowconn, datconnlimit, datlastsysoid, datfrozenxid, datminmxid, dattablespace, datacl 
-                FROM pg_database 
-                WHERE datname = '{dbName}' OR current_user = 'postgres';
-                
-                GRANT SELECT ON user_databases TO {credentials.Username};
-                ";
-
-                await using var cmd = new NpgsqlCommand(customViewSql, conn);
-                await cmd.ExecuteNonQueryAsync();
-
-                _logger.LogInformation($"✅ Created custom database view for user {credentials.Username}");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning($"⚠️ Could not create custom view: {ex.Message}");
-            }
-
-            _logger.LogInformation($"✅ PostgreSQL database {dbName} created with MAXIMUM ISOLATION and CUSTOM CATALOG FILTERING");
+            _logger.LogInformation($"✅ PostgreSQL database {dbName} created with ISOLATION (optimized)");
         }
 
         private async Task CreateMySQLDatabaseAsync(
@@ -854,8 +781,7 @@ namespace CrudCloudDb.Infrastructure.Services
                     $"Server={host};Port={port};Database={dbName};Uid={credentials.Username};Pwd={credentials.Password}",
 
                 DatabaseEngine.MongoDB =>
-                    // URL-encode la password para manejar caracteres especiales
-                    $"mongodb://{credentials.Username}:{Uri.EscapeDataString(credentials.Password)}@{host}:{port}/",
+                    $"mongodb://{credentials.Username}:{credentials.Password}@{host}:{port}/{dbName}?authSource={dbName}",
 
                 _ => throw new NotSupportedException()
             };

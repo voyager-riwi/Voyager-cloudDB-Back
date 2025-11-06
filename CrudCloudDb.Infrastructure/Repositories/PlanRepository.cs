@@ -1,10 +1,8 @@
-﻿using CrudCloudDb.Application.Interfaces.Repositories;
+﻿﻿using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Core.Entities;
 using CrudCloudDb.Core.Enums;
 using CrudCloudDb.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace CrudCloudDb.Infrastructure.Repositories
 {
@@ -36,5 +34,9 @@ namespace CrudCloudDb.Infrastructure.Repositories
             return await _context.Plans.AsNoTracking().ToListAsync();
         }
         
+        public async Task<Plan?> GetByTypeAsync(PlanType planType)
+        {
+            return await GetByPlanTypeAsync(planType);
+        }
     }
 }
