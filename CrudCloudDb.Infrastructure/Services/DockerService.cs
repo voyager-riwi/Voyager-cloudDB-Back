@@ -481,41 +481,21 @@ namespace CrudCloudDb.Infrastructure.Services
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // 🔒 PASO 2: Crear usuario CON restricciones (solo puede conectarse a su DB)
-            // La sintaxis IDENTIFIED BY ya crea el usuario con password
+            // 🔒 PASO 2: Crear usuario
             await using (var cmd = new MySqlCommand(
                 $"CREATE USER '{credentials.Username}'@'%' IDENTIFIED BY '{credentials.Password}'", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // 🔒 PASO 3: PERMISOS SOLO EN SU BASE DE DATOS
-            // El usuario NO verá otras bases de datos porque no tiene permisos
-            await using (var cmd = new MySqlCommand(
-                $@"GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, INDEX, ALTER, 
-                   CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, 
-                   CREATE ROUTINE, ALTER ROUTINE, TRIGGER, REFERENCES 
-                   ON {dbName}.* TO '{credentials.Username}'@'%'", conn))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
-
-            // 🔒 PASO 4: Asegurar que NO tenga acceso global
-            // Revocar cualquier permiso global que pudiera tener
-            await using (var cmd = new MySqlCommand(
-                $"REVOKE ALL PRIVILEGES ON *.* FROM '{credentials.Username}'@'%'", conn))
-            {
-                try { await cmd.ExecuteNonQueryAsync(); } catch { }
-            }
-
-            // 🔒 PASO 5: Revocar acceso a bases de datos del sistema
+            // 🔒 PASO 3: Revocar acceso a bases de datos del sistema PRIMERO
             var systemDatabases = new[] { "mysql", "information_schema", "performance_schema", "sys" };
             foreach (var sysDb in systemDatabases)
             {
                 try
                 {
                     await using var revokeCmd = new MySqlCommand(
-                        $"REVOKE ALL PRIVILEGES ON {sysDb}.* FROM '{credentials.Username}'@'%'", conn);
+                        $"REVOKE ALL PRIVILEGES ON `{sysDb}`.* FROM '{credentials.Username}'@'%'", conn);
                     await revokeCmd.ExecuteNonQueryAsync();
                 }
                 catch (Exception ex)
@@ -524,7 +504,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 }
             }
 
-            // 🔒 PASO 6: Revocar acceso a TODAS las otras bases de datos de usuarios
+            // 🔒 PASO 4: Revocar acceso a otras bases de datos de usuarios existentes
             await using (var cmd = new MySqlCommand(
                 $"SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys', '{dbName}')", conn))
             {
@@ -541,7 +521,7 @@ namespace CrudCloudDb.Infrastructure.Services
                     try
                     {
                         await using var revokeCmd = new MySqlCommand(
-                            $"REVOKE ALL PRIVILEGES ON {otherDb}.* FROM '{credentials.Username}'@'%'", conn);
+                            $"REVOKE ALL PRIVILEGES ON `{otherDb}`.* FROM '{credentials.Username}'@'%'", conn);
                         await revokeCmd.ExecuteNonQueryAsync();
                     }
                     catch (Exception ex)
@@ -551,13 +531,23 @@ namespace CrudCloudDb.Infrastructure.Services
                 }
             }
 
-            // 🔒 PASO 7: Aplicar cambios
+            // 🔒 PASO 5: OTORGAR permisos SOLO en SU base de datos (DESPUÉS de los REVOKEs)
+            await using (var cmd = new MySqlCommand(
+                $@"GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, INDEX, ALTER, 
+                   CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, 
+                   CREATE ROUTINE, ALTER ROUTINE, TRIGGER, REFERENCES 
+                   ON `{dbName}`.* TO '{credentials.Username}'@'%'", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // 🔒 PASO 6: Aplicar cambios
             await using (var cmd = new MySqlCommand("FLUSH PRIVILEGES", conn))
             {
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            _logger.LogInformation($"✅ MySQL database {dbName} created with MAXIMUM ISOLATION (user can only see their own database)");
+            _logger.LogInformation($"✅ MySQL database {dbName} created with ISOLATED access (user can only access their own database)");
         }
 
         private async Task CreateMongoDBDatabaseAsync(
