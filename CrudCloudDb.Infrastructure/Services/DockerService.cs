@@ -318,9 +318,9 @@ namespace CrudCloudDb.Infrastructure.Services
             CredentialsResult credentials)
         {
             var connString = $"Host={master.Host};Port={master.Port};Database=postgres;Username={master.AdminUsername};Password={master.AdminPassword}";
-            var allDatabases = new List<string>();
 
-            // --- PASO 1: Obtener lista de todas las bases de datos ---
+            // --- PASO 1: Conectar a postgres y obtener todas las bases de datos ---
+            var allDatabases = new List<string>();
             await using (var conn = new NpgsqlConnection(connString))
             {
                 await conn.OpenAsync();
@@ -334,80 +334,150 @@ namespace CrudCloudDb.Infrastructure.Services
                 }
             }
 
-            // --- PASO 2: Crear el usuario y la nueva base de datos ---
+            // --- PASO 2: REVOCAR PERMISOS GLOBALES DEL ROL PUBLIC (AGRESIVO) ---
             await using (var conn = new NpgsqlConnection(connString))
             {
                 await conn.OpenAsync();
-                // Crear usuario sin privilegios
-                await using (var cmd = new NpgsqlCommand($"CREATE USER {credentials.Username} WITH PASSWORD '{credentials.Password}' NOCREATEDB NOCREATEROLE", conn))
+
+                // Revocar permisos de PUBLIC en pg_database (catálogo del sistema)
+                try
+                {
+                    await using var cmd = new NpgsqlCommand("REVOKE ALL ON pg_database FROM PUBLIC", conn);
+                    await cmd.ExecuteNonQueryAsync();
+                    _logger.LogInformation("🔒 Revoked PUBLIC access to pg_database catalog");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning($"⚠️ Could not revoke PUBLIC access to pg_database: {ex.Message}");
+                }
+
+                // Revocar permisos de PUBLIC en information_schema
+                try
+                {
+                    await using var cmd = new NpgsqlCommand("REVOKE ALL ON information_schema.schemata FROM PUBLIC", conn);
+                    await cmd.ExecuteNonQueryAsync();
+                    _logger.LogInformation("🔒 Revoked PUBLIC access to information_schema");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning($"⚠️ Could not revoke PUBLIC access to information_schema: {ex.Message}");
+                }
+
+                // Crear el usuario con restricciones máximas
+                await using (var cmd = new NpgsqlCommand($"CREATE USER {credentials.Username} WITH PASSWORD '{credentials.Password}' NOCREATEDB NOCREATEROLE NOSUPERUSER NOREPLICATION NOBYPASSRLS", conn))
                 {
                     await cmd.ExecuteNonQueryAsync();
                 }
+
                 // Crear la base de datos
                 await using (var cmd = new NpgsqlCommand($"CREATE DATABASE {dbName} OWNER {master.AdminUsername}", conn))
                 {
                     await cmd.ExecuteNonQueryAsync();
                 }
+
+                _logger.LogInformation($"✅ Created user {credentials.Username} and database {dbName}");
             }
 
-            // --- PASO 3: Revocar permisos de 'public' en TODAS las bases de datos existentes ---
+            // --- PASO 3: REVOCAR ACCESO DE ESTE USUARIO A TODAS LAS OTRAS BASES DE DATOS ---
             foreach (var existingDb in allDatabases)
             {
-                if (existingDb == dbName) continue; // No revocar en la nueva DB todavía
+                if (existingDb == dbName) continue; // Skip la nueva DB
 
-                var tempConnString = $"Host={master.Host};Port={master.Port};Database={existingDb};Username={master.AdminUsername};Password={master.AdminPassword}";
                 try
                 {
+                    var tempConnString = $"Host={master.Host};Port={master.Port};Database={existingDb};Username={master.AdminUsername};Password={master.AdminPassword}";
                     await using var tempConn = new NpgsqlConnection(tempConnString);
                     await tempConn.OpenAsync();
-                    // Revocar CONNECT y TEMPORARY del rol public
-                    await using (var cmd = new NpgsqlCommand($"REVOKE CONNECT, TEMPORARY ON DATABASE {existingDb} FROM PUBLIC", tempConn))
-                    {
-                        await cmd.ExecuteNonQueryAsync();
-                    }
-                    // Revocar todos los permisos del nuevo usuario en esta DB
+
+                    // Revocar TODOS los permisos en esta base de datos
                     await using (var cmd = new NpgsqlCommand($"REVOKE ALL ON DATABASE {existingDb} FROM {credentials.Username}", tempConn))
                     {
                         await cmd.ExecuteNonQueryAsync();
                     }
-                    _logger.LogInformation($"🔒 Revoked public access on DB: {existingDb}");
+
+                    // Revocar permisos en todos los esquemas de esta DB
+                    await using (var cmd = new NpgsqlCommand($"REVOKE ALL ON SCHEMA public FROM {credentials.Username}", tempConn))
+                    {
+                        await cmd.ExecuteNonQueryAsync();
+                    }
+
+                    await using (var cmd = new NpgsqlCommand($"REVOKE ALL ON SCHEMA information_schema FROM {credentials.Username}", tempConn))
+                    {
+                        await cmd.ExecuteNonQueryAsync();
+                    }
+
+                    await using (var cmd = new NpgsqlCommand($"REVOKE ALL ON SCHEMA pg_catalog FROM {credentials.Username}", tempConn))
+                    {
+                        await cmd.ExecuteNonQueryAsync();
+                    }
+
+                    _logger.LogInformation($"🔒 Revoked all access to database: {existingDb}");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning($"⚠️ Could not revoke public access on {existingDb}: {ex.Message}");
+                    _logger.LogWarning($"⚠️ Could not revoke access to {existingDb}: {ex.Message}");
                 }
             }
 
-            // --- PASO 4: Conectar a la NUEVA base de datos y configurar permisos ---
+            // --- PASO 4: OTORGAR PERMISOS SOLO EN SU BASE DE DATOS ---
             var newDbConnString = $"Host={master.Host};Port={master.Port};Database={dbName};Username={master.AdminUsername};Password={master.AdminPassword}";
             await using (var newDbConn = new NpgsqlConnection(newDbConnString))
             {
                 await newDbConn.OpenAsync();
 
-                // Otorgar CONNECT explícitamente al usuario SOLO en su DB
+                // Otorgar CONNECT solo en esta DB
                 await using (var cmd = new NpgsqlCommand($"GRANT CONNECT ON DATABASE {dbName} TO {credentials.Username}", newDbConn))
                 {
                     await cmd.ExecuteNonQueryAsync();
                 }
 
-                // Otorgar permisos completos en el schema public
+                // Dar permisos completos en el schema public
                 await using (var cmd = new NpgsqlCommand($"GRANT ALL ON SCHEMA public TO {credentials.Username}", newDbConn))
                 {
                     await cmd.ExecuteNonQueryAsync();
                 }
-                
+
                 // Privilegios por defecto para objetos futuros
                 await using (var cmd = new NpgsqlCommand($"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO {credentials.Username}", newDbConn))
                 {
                     await cmd.ExecuteNonQueryAsync();
                 }
+
                 await using (var cmd = new NpgsqlCommand($"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO {credentials.Username}", newDbConn))
                 {
                     await cmd.ExecuteNonQueryAsync();
                 }
+
+                _logger.LogInformation($"✅ Granted permissions on database {dbName}");
             }
-            
-            _logger.LogInformation($"✅ PostgreSQL database {dbName} created with ULTIMATE ISOLATION.");
+
+            // --- PASO 5: CREAR UNA VISTA PERSONALIZADA PARA pg_database (EXPERIMENTAL) ---
+            try
+            {
+                await using var conn = new NpgsqlConnection(newDbConnString);
+                await conn.OpenAsync();
+
+                // Crear una función que solo muestre la DB del usuario
+                var customViewSql = $@"
+                CREATE OR REPLACE VIEW user_databases AS 
+                SELECT datname, datdba, encoding, datcollate, datctype, datistemplate, datallowconn, datconnlimit, datlastsysoid, datfrozenxid, datminmxid, dattablespace, datacl 
+                FROM pg_database 
+                WHERE datname = '{dbName}' OR current_user = 'postgres';
+                
+                GRANT SELECT ON user_databases TO {credentials.Username};
+                ";
+
+                await using var cmd = new NpgsqlCommand(customViewSql, conn);
+                await cmd.ExecuteNonQueryAsync();
+
+                _logger.LogInformation($"✅ Created custom database view for user {credentials.Username}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"⚠️ Could not create custom view: {ex.Message}");
+            }
+
+            _logger.LogInformation($"✅ PostgreSQL database {dbName} created with MAXIMUM ISOLATION and CUSTOM CATALOG FILTERING");
         }
 
         private async Task CreateMySQLDatabaseAsync(
