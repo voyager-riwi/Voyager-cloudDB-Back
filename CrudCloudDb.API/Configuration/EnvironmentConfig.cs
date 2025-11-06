@@ -69,6 +69,16 @@ namespace CrudCloudDb.API.Configuration
                                       ?? "true")
             };
         }
+
+        /// <summary>
+        /// Obtiene la configuración de Webhook
+        /// </summary>
+        public static string GetDiscordWebhookUrl(IConfiguration configuration)
+        {
+            return Environment.GetEnvironmentVariable("DISCORD_WEBHOOK_URL") 
+                   ?? configuration["WebhookSettings:DiscordUrl"] 
+                   ?? string.Empty;
+        }
     }
 
     public class EmailConfig

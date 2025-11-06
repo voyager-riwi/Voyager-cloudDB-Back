@@ -30,11 +30,16 @@ Log.Logger = new LoggerConfiguration()
         .Build())
     .CreateBootstrapLogger();
 
+// =======================
+// 2️⃣.1 MercadoPago Initial Configuration
+// =======================
+// Se configurará después de cargar .env en desarrollo
 var tempConfig = new ConfigurationBuilder()
     .AddJsonFile("appsettings.json")
     .Build();
 
-MercadoPagoConfig.AccessToken = tempConfig["MercadoPagoSettings:AccessToken"];
+// Esto se sobreescribirá después de cargar .env si es necesario
+MercadoPagoConfig.AccessToken = tempConfig["MercadoPagoSettings:AccessToken"] ?? "placeholder";
 
 // =======================
 // 3️⃣ Main Application Block
@@ -70,6 +75,23 @@ try
             }
             Log.Information("✅ Loaded .env file for development");
         }
+    }
+
+    // =======================
+    // 4️⃣.2 Configure MercadoPago from Environment Variables
+    // =======================
+    var mercadoPagoAccessToken = Environment.GetEnvironmentVariable("MERCADOPAGO_ACCESS_TOKEN")
+                                ?? builder.Configuration["MercadoPagoSettings:AccessToken"]
+                                ?? "placeholder";
+    
+    if (mercadoPagoAccessToken != "placeholder")
+    {
+        MercadoPagoConfig.AccessToken = mercadoPagoAccessToken;
+        Log.Information("✅ MercadoPago configured");
+    }
+    else
+    {
+        Log.Warning("⚠️ MercadoPago AccessToken not configured");
     }
 
     // =======================
@@ -173,17 +195,17 @@ try
     builder.Services.AddScoped<ICredentialService, CredentialService>();
     
     // =======================
-    // 9️⃣ Webhook configuration
+    // 9️⃣.1 Webhook configuration
     // =======================
-    var urlTest = builder.Configuration.GetSection("WeebhookSettings")["DiscordUrl"];
-
-// Si estás en .NET 6/7, puedes usar Console.WriteLine en Program.cs
-    Console.WriteLine($"DEBUG CONFIG CHECK: La URL leída directamente es: {urlTest}");
-    
     builder.Services.AddHttpClient();
-    builder.Services.Configure<WebhookSettings>(builder.Configuration.GetSection("WeebhookSettings"));
+    builder.Services.Configure<WebhookSettings>(options =>
+    {
+        // Leer de variables de entorno con fallback a appsettings
+        options.DiscordUrl = Environment.GetEnvironmentVariable("DISCORD_WEBHOOK_URL") 
+                            ?? builder.Configuration["WebhookSettings:DiscordUrl"]
+                            ?? string.Empty;
+    });
     builder.Services.AddScoped<IWebhookService, WebhookService>();
-    Console.WriteLine($"DEBUG CONFIG CHECK: La URL leída directamente es: {urlTest}");
     
     
     // =======================
