@@ -339,32 +339,62 @@ namespace CrudCloudDb.Infrastructure.Services
             {
                 await conn.OpenAsync();
 
-                // Revocar permisos de PUBLIC en pg_database (catálogo del sistema)
+                // 🔑 CLAVE: Revocar SELECT en pg_database para PUBLIC
+                // Esto impide que cualquier usuario vea el catálogo de bases de datos
                 try
                 {
-                    await using var cmd = new NpgsqlCommand("REVOKE ALL ON pg_database FROM PUBLIC", conn);
+                    await using var cmd = new NpgsqlCommand("REVOKE SELECT ON pg_database FROM PUBLIC", conn);
                     await cmd.ExecuteNonQueryAsync();
-                    _logger.LogInformation("🔒 Revoked PUBLIC access to pg_database catalog");
+                    _logger.LogInformation("🔒 Revoked SELECT on pg_database from PUBLIC");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning($"⚠️ Could not revoke PUBLIC access to pg_database: {ex.Message}");
+                    _logger.LogWarning($"⚠️ Could not revoke SELECT on pg_database from PUBLIC: {ex.Message}");
                 }
 
-                // Revocar permisos de PUBLIC en information_schema
+                // Revocar SELECT en information_schema.schemata
                 try
                 {
-                    await using var cmd = new NpgsqlCommand("REVOKE ALL ON information_schema.schemata FROM PUBLIC", conn);
+                    await using var cmd = new NpgsqlCommand("REVOKE SELECT ON information_schema.schemata FROM PUBLIC", conn);
                     await cmd.ExecuteNonQueryAsync();
-                    _logger.LogInformation("🔒 Revoked PUBLIC access to information_schema");
+                    _logger.LogInformation("🔒 Revoked SELECT on information_schema.schemata from PUBLIC");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning($"⚠️ Could not revoke PUBLIC access to information_schema: {ex.Message}");
+                    _logger.LogWarning($"⚠️ Could not revoke SELECT on information_schema: {ex.Message}");
                 }
 
                 // Crear el usuario con restricciones máximas
                 await using (var cmd = new NpgsqlCommand($"CREATE USER {credentials.Username} WITH PASSWORD '{credentials.Password}' NOCREATEDB NOCREATEROLE NOSUPERUSER NOREPLICATION NOBYPASSRLS", conn))
+                {
+                    await cmd.ExecuteNonQueryAsync();
+                }
+
+                // 🔑 CLAVE: Revocar SELECT en pg_database para el usuario específico
+                // Esto asegura que el usuario NO vea otras bases de datos
+                try
+                {
+                    await using var cmd = new NpgsqlCommand($"REVOKE SELECT ON pg_database FROM {credentials.Username}", conn);
+                    await cmd.ExecuteNonQueryAsync();
+                    _logger.LogInformation($"🔒 Revoked SELECT on pg_database from {credentials.Username}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning($"⚠️ Could not revoke SELECT on pg_database from user: {ex.Message}");
+                }
+
+                // Revocar CONNECT en bases de datos del sistema
+                await using (var cmd = new NpgsqlCommand($"REVOKE CONNECT ON DATABASE postgres FROM PUBLIC", conn))
+                {
+                    await cmd.ExecuteNonQueryAsync();
+                }
+
+                await using (var cmd = new NpgsqlCommand($"REVOKE CONNECT ON DATABASE template0 FROM PUBLIC", conn))
+                {
+                    await cmd.ExecuteNonQueryAsync();
+                }
+
+                await using (var cmd = new NpgsqlCommand($"REVOKE CONNECT ON DATABASE template1 FROM PUBLIC", conn))
                 {
                     await cmd.ExecuteNonQueryAsync();
                 }
@@ -375,7 +405,7 @@ namespace CrudCloudDb.Infrastructure.Services
                     await cmd.ExecuteNonQueryAsync();
                 }
 
-                _logger.LogInformation($"✅ Created user {credentials.Username} and database {dbName}");
+                _logger.LogInformation($"✅ Created user {credentials.Username} and database {dbName} with SELECT restriction on pg_database");
             }
 
             // --- PASO 3: REVOCAR ACCESO DE ESTE USUARIO A TODAS LAS OTRAS BASES DE DATOS ---
