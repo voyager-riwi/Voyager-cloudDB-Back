@@ -32,20 +32,17 @@ namespace CrudCloudDb.API.Controllers
         {
             // ⭐ LEE EL USER ID DEL TOKEN JWT
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            
             if (string.IsNullOrEmpty(userIdClaim))
             {
-                _logger.LogError("❌ User not authenticated - no NameIdentifier claim found");
+                _logger.LogError("Usuario no autenticado: Falta el claim '{ClaimType}' en el token.", ClaimTypes.NameIdentifier);
                 throw new UnauthorizedAccessException("User not authenticated");
             }
-
             if (!Guid.TryParse(userIdClaim, out var userId))
             {
-                _logger.LogError($"❌ Invalid user ID format in token: {userIdClaim}");
+                _logger.LogError("Formato de ID de usuario inválido en el token. Valor del claim: '{UserIdClaim}'.", userIdClaim);
                 throw new UnauthorizedAccessException("Invalid user ID format");
             }
-
-            _logger.LogInformation($"✅ User authenticated: {userId}");
+            _logger.LogDebug("ID de usuario extraído exitosamente del token: {UserId}.", userId);
             return userId;
         }
 
@@ -65,22 +62,22 @@ namespace CrudCloudDb.API.Controllers
         {
             try
             {
-                _logger.LogInformation($"📥 Create database request: {request.Engine}");
+                _logger.LogInformation("Petición recibida para crear base de datos. Motor: {Engine}.", request.Engine);
                 
                 var userId = GetCurrentUserId();
                 var result = await _databaseService.CreateDatabaseAsync(userId, request);
                 
-                _logger.LogInformation($"✅ Database created successfully: {result.Id}");
+                _logger.LogInformation("Base de datos creada exitosamente. ID: {DatabaseId}.", result.Id);
                 return Ok(result);
             }
             catch (UnauthorizedAccessException ex)
             {
-                _logger.LogWarning($"⚠️ Unauthorized: {ex.Message}");
+                _logger.LogWarning("Acceso no autorizado al intentar crear DB. Mensaje: {ErrorMessage}.", ex.Message);
                 return Unauthorized(new { success = false, message = "User not authenticated" });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Error creating database");
+                _logger.LogError(ex, "Error desconocido al intentar crear la base de datos.");
                 return BadRequest(new { success = false, message = ex.Message });
             }
         }
@@ -100,21 +97,21 @@ namespace CrudCloudDb.API.Controllers
             try
             {
                 var userId = GetCurrentUserId();
-                _logger.LogInformation($"📋 Getting databases for user: {userId}");
+                _logger.LogInformation("Iniciando la recuperación de bases de datos para el usuario: {UserId}.", userId);
                 
                 var databases = await _databaseService.GetUserDatabasesAsync(userId);
                 
-                _logger.LogInformation($"✅ Found {databases.Count} databases");
+                _logger.LogInformation("Bases de datos encontradas para el usuario {UserId}: {Count} registros.", userId, databases.Count);
                 return Ok(databases);
             }
             catch (UnauthorizedAccessException ex)
             {
-                _logger.LogWarning($"⚠️ Unauthorized: {ex.Message}");
+                _logger.LogWarning("Acceso no autorizado al intentar obtener bases de datos. Mensaje: {ErrorMessage}.", ex.Message);
                 return Unauthorized(new { success = false, message = "User not authenticated" });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Error getting databases");
+                _logger.LogError(ex, "Error desconocido al intentar obtener las bases de datos.");
                 return BadRequest(new { success = false, message = ex.Message });
             }
         }
@@ -134,31 +131,33 @@ namespace CrudCloudDb.API.Controllers
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> GetDatabase(Guid id)
         {
-            try
+            
+            Guid userId = Guid.Empty;
+            try     
             {
-                var userId = GetCurrentUserId();
-                _logger.LogInformation($"🔍 Getting database {id} for user {userId}");
+                userId = GetCurrentUserId();
+                _logger.LogInformation("Iniciando búsqueda de base de datos. DB ID: {DatabaseId} | Usuario ID: {UserId}.", id, userId);
                 
                 var database = await _databaseService.GetDatabaseByIdAsync(userId, id);
                 
                 if (database == null)
                 {
-                    _logger.LogWarning($"⚠️ Database {id} not found");
+                    _logger.LogWarning("Base de datos no encontrada o usuario sin acceso. DB ID: {DatabaseId}.", id);
                     return NotFound(new { success = false, message = "Database not found" });
                 }
                 
-                _logger.LogInformation($"✅ Database found: {database.Name}");
+                _logger.LogInformation("Base de datos encontrada exitosamente. Nombre: {DatabaseName}.", database.Name);
                 return Ok(database);
             }
             catch (UnauthorizedAccessException ex)
             {
-                _logger.LogWarning($"⚠️ Access denied: {ex.Message}");
+                _logger.LogWarning("Acceso denegado a la base de datos {DatabaseId} para el usuario {UserId}. Mensaje: {ErrorMessage}.", id, userId, ex.Message);
                 return StatusCode(StatusCodes.Status403Forbidden, 
                     new { success = false, message = "You don't have access to this database" });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"❌ Error getting database {id}");
+                _logger.LogError(ex, "Error desconocido al intentar obtener la base de datos {DatabaseId}.", id);
                 return BadRequest(new { success = false, message = ex.Message });
             }
         }
@@ -178,31 +177,32 @@ namespace CrudCloudDb.API.Controllers
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> DeleteDatabase(Guid id)
         {
+            Guid userId = Guid.Empty;
             try
             {
-                var userId = GetCurrentUserId();
-                _logger.LogInformation($"🗑️ Delete database request: {id} by user {userId}");
+                userId = GetCurrentUserId();
+                _logger.LogInformation("Petición recibida para eliminar base de datos. DB ID: {DatabaseId} | Usuario ID: {UserId}.", id, userId);
                 
                 var success = await _databaseService.DeleteDatabaseAsync(userId, id);
                 
                 if (!success)
                 {
-                    _logger.LogWarning($"⚠️ Database {id} not found");
+                    _logger.LogWarning("Base de datos no encontrada o usuario no autorizado para eliminar. DB ID: {DatabaseId}.", id);
                     return NotFound(new { success = false, message = "Database not found" });
                 }
                 
-                _logger.LogInformation($"✅ Database {id} deleted successfully");
+                _logger.LogInformation("Base de datos {DatabaseId} eliminada exitosamente.", id);
                 return Ok(new { success = true, message = "Database deleted successfully" });
             }
             catch (UnauthorizedAccessException ex)
             {
-                _logger.LogWarning($"⚠️ Access denied: {ex.Message}");
-                return StatusCode(StatusCodes.Status403Forbidden, 
+                _logger.LogWarning("Acceso denegado a la base de datos {DatabaseId} para el usuario {UserId}. Mensaje: {ErrorMessage}.", id, userId, ex.Message);
+                return StatusCode(StatusCodes.Status403Forbidden,   
                     new { success = false, message = "You don't have access to this database" });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"❌ Error deleting database {id}");
+                _logger.LogError(ex, "Error desconocido al intentar eliminar la base de datos {DatabaseId}. Usuario: {UserId}", id, userId);
                 return BadRequest(new { success = false, message = ex.Message });
             }
         }
@@ -222,14 +222,15 @@ namespace CrudCloudDb.API.Controllers
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> ResetPassword(Guid id)
         {
+            Guid userId = Guid.Empty;;
             try
             {
-                var userId = GetCurrentUserId();
-                _logger.LogInformation($"🔑 Reset password request for database {id}");
+                userId = GetCurrentUserId();
+                _logger.LogInformation("Petición de reseteo de contraseña recibida. DB ID: {DatabaseId} | Usuario ID: {UserId}.", id, userId);
                 
                 await _databaseService.ResetPasswordAsync(userId, id);
                 
-                _logger.LogInformation($"✅ Password reset successfully for database {id}");
+                _logger.LogInformation("Contraseña reseteada exitosamente para la base de datos {DatabaseId}.", id);
                 return Ok(new 
                 { 
                     success = true, 
@@ -238,18 +239,18 @@ namespace CrudCloudDb.API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                _logger.LogWarning($"⚠️ Access denied: {ex.Message}");
+                _logger.LogWarning("Acceso denegado al intentar resetear la contraseña de la DB {DatabaseId}. Usuario: {UserId}. Mensaje: {ErrorMessage}.", id, userId, ex.Message);
                 return StatusCode(StatusCodes.Status403Forbidden, 
                     new { success = false, message = "You don't have access to this database" });
             }
             catch (KeyNotFoundException)
             {
-                _logger.LogWarning($"⚠️ Database {id} not found");
+                _logger.LogWarning("Base de datos no encontrada (KeyNotFoundException). DB ID: {DatabaseId}.", id);
                 return NotFound(new { success = false, message = "Database not found" });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"❌ Error resetting password for database {id}");
+                _logger.LogError(ex, "Error desconocido al intentar resetear la contraseña para la base de datos {DatabaseId}. Usuario: {UserId}", id, userId);
                 return BadRequest(new { success = false, message = ex.Message });
             }
         }
@@ -270,36 +271,38 @@ namespace CrudCloudDb.API.Controllers
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> RestoreDatabase(Guid id)
         {
+            Guid userId = Guid.Empty;
             try
             {
-                var userId = GetCurrentUserId();
-                _logger.LogInformation($"♻️ Restore database request: {id} by user {userId}");
+                userId = GetCurrentUserId();
+                _logger.LogInformation("Petición de restauración de base de datos recibida. DB ID: {DatabaseId} | Usuario ID: {UserId}.",
+                    id, userId);
 
                 var success = await _databaseService.RestoreDatabaseAsync(userId, id);
 
                 if (!success)
                 {
-                    _logger.LogWarning($"⚠️ Database {id} not found or already active");
+                    _logger.LogWarning("La base de datos no fue restaurada. Razón: no encontrada o ya está activa. DB ID: {DatabaseId}.", id);
                     return NotFound(new { success = false, message = "Database not found or already active" });
                 }
 
-                _logger.LogInformation($"✅ Database {id} restored successfully");
+                _logger.LogInformation("Base de datos {DatabaseId} restaurada exitosamente.", id);
                 return Ok(new { success = true, message = "Database restored successfully" });
             }
             catch (UnauthorizedAccessException ex)
             {
-                _logger.LogWarning($"⚠️ Access denied: {ex.Message}");
+                _logger.LogWarning("Acceso denegado al intentar restaurar la DB {DatabaseId}. Usuario: {UserId}. Mensaje: {ErrorMessage}.", id, userId, ex.Message);
                 return StatusCode(StatusCodes.Status403Forbidden,
                     new { success = false, message = "You don't have access to this database" });
             }
             catch (InvalidOperationException ex)
             {
-                _logger.LogWarning($"⚠️ Invalid operation: {ex.Message}");
+                _logger.LogWarning("Operación de restauración inválida para la DB {DatabaseId}. Mensaje: {ErrorMessage}.", id, ex.Message);
                 return BadRequest(new { success = false, message = ex.Message });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"❌ Error restoring database {id}");
+                _logger.LogError(ex, "Error desconocido al intentar restaurar la base de datos {DatabaseId}. Usuario: {UserId}", id, userId);
                 return BadRequest(new { success = false, message = ex.Message });
             }
         }

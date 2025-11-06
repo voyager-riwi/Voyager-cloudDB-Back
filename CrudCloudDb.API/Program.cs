@@ -2,6 +2,7 @@
 // 1️⃣ Using Statements
 // =======================
 using System.Text;
+using CrudCloudDb.API.Configuration;
 using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Application.Services.Implementation;
 using CrudCloudDb.Application.Services.Interfaces;
@@ -14,6 +15,9 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
+using MercadoPago.Config; 
+using CrudCloudDb.Application.Configuration;
+
 
 // =======================
 // 2️⃣ Serilog Bootstrap Configuration
@@ -23,6 +27,12 @@ Log.Logger = new LoggerConfiguration()
         .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
         .Build())
     .CreateBootstrapLogger();
+
+var tempConfig = new ConfigurationBuilder()
+    .AddJsonFile("appsettings.json")
+    .Build();
+
+MercadoPagoConfig.AccessToken = tempConfig["MercadoPagoSettings:AccessToken"];
 
 // =======================
 // 3️⃣ Main Application Block
@@ -142,11 +152,15 @@ try
     // =======================
     // 9️⃣ Repositories & Services Registration
     // =======================
+    builder.Services.AddScoped<ICredentialService, CredentialService>();
+    builder.Services.AddScoped<IPaymentService, PaymentService>();
+    builder.Services.AddScoped<IWebhookService, WebhookService>(); 
     builder.Services.AddScoped<IUserRepository, UserRepository>();
     builder.Services.AddScoped<IPlanRepository, PlanRepository>();
     builder.Services.AddScoped<IDatabaseInstanceRepository, DatabaseInstanceRepository>();
     builder.Services.AddScoped<IEmailLogRepository, EmailLogRepository>();
-
+    builder.Services.AddScoped<ISubscriptionRepository, SubscriptionRepository>(); 
+    
     builder.Services.AddScoped<IAuthService, AuthService>();
     builder.Services.AddScoped<IUserService, UserService>();
     builder.Services.AddScoped<IEmailService, EmailService>();
@@ -156,7 +170,20 @@ try
     builder.Services.AddScoped<IPortManagerService, PortManagerService>();
     builder.Services.AddScoped<ICredentialService, CredentialService>();
     
+    // =======================
+    // 9️⃣ Webhook configuration
+    // =======================
+    var urlTest = builder.Configuration.GetSection("WeebhookSettings")["DiscordUrl"];
 
+// Si estás en .NET 6/7, puedes usar Console.WriteLine en Program.cs
+    Console.WriteLine($"DEBUG CONFIG CHECK: La URL leída directamente es: {urlTest}");
+    
+    builder.Services.AddHttpClient();
+    builder.Services.Configure<WebhookSettings>(builder.Configuration.GetSection("WeebhookSettings"));
+    builder.Services.AddScoped<IWebhookService, WebhookService>();
+    Console.WriteLine($"DEBUG CONFIG CHECK: La URL leída directamente es: {urlTest}");
+    
+    
     // =======================
     // 🔟 Controllers Configuration
     // =======================
