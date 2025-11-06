@@ -854,7 +854,8 @@ namespace CrudCloudDb.Infrastructure.Services
                     $"Server={host};Port={port};Database={dbName};Uid={credentials.Username};Pwd={credentials.Password}",
 
                 DatabaseEngine.MongoDB =>
-                    $"mongodb://{credentials.Username}:{credentials.Password}@{host}:{port}/{dbName}?authSource={dbName}",
+                    // URL-encode la password para manejar caracteres especiales
+                    $"mongodb://{credentials.Username}:{Uri.EscapeDataString(credentials.Password)}@{host}:{port}/",
 
                 _ => throw new NotSupportedException()
             };
