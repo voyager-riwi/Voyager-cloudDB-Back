@@ -1,6 +1,8 @@
-﻿namespace CrudCloudDb.Application.Interfaces.Repositories;
+﻿using CrudCloudDb.Core.Entities;
 
-public class ISubscriptionRepository
+namespace CrudCloudDb.Application.Interfaces.Repositories;
+
+public interface ISubscriptionRepository
 {
-    
+    Task<Subscription> CreateAsync(Subscription subscription);
 }

@@ -15,7 +15,9 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
+using MercadoPago.Config; 
 using CrudCloudDb.Application.Configuration;
+
 
 // =======================
 // 2️⃣ Serilog Bootstrap Configuration
@@ -26,6 +28,11 @@ Log.Logger = new LoggerConfiguration()
         .Build())
     .CreateBootstrapLogger();
 
+var tempConfig = new ConfigurationBuilder()
+    .AddJsonFile("appsettings.json")
+    .Build();
+
+MercadoPagoConfig.AccessToken = tempConfig["MercadoPagoSettings:AccessToken"];
 
 // =======================
 // 3️⃣ Main Application Block
@@ -102,11 +109,15 @@ try
     // =======================
     // 9️⃣ Repositories & Services Registration
     // =======================
+    builder.Services.AddScoped<ICredentialService, CredentialService>();
+    builder.Services.AddScoped<IPaymentService, PaymentService>();
+    builder.Services.AddScoped<IWebhookService, WebhookService>(); 
     builder.Services.AddScoped<IUserRepository, UserRepository>();
     builder.Services.AddScoped<IPlanRepository, PlanRepository>();
     builder.Services.AddScoped<IDatabaseInstanceRepository, DatabaseInstanceRepository>();
     builder.Services.AddScoped<IEmailLogRepository, EmailLogRepository>();
-
+    builder.Services.AddScoped<ISubscriptionRepository, SubscriptionRepository>(); 
+    
     builder.Services.AddScoped<IAuthService, AuthService>();
     builder.Services.AddScoped<IUserService, UserService>();
     builder.Services.AddScoped<IEmailService, EmailService>();
