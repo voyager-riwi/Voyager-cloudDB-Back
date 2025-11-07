@@ -5,24 +5,7 @@ services:
     image: nginx:alpine
     container_name: voyager-backend-nginx
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
+    network_mode: host
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro  # Si tienes certificados SSL
-    depends_on:
-      - backend
-    networks:
-      - voyager-network
-
-  # Esta es una referencia al backend, pero NO lo vas a iniciar con compose
-  # porque ya lo inicias con docker run en el deploy.yml
-  backend:
-    image: crudclouddb-api:latest
-    container_name: crudclouddb_backend
-    external: true  # Indica que este contenedor se maneja externamente
-
-networks:
-  voyager-network:
-    driver: bridge
+    command: ["nginx", "-g", "daemon off;"]
