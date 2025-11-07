@@ -3,6 +3,7 @@
 // =======================
 using System.Text;
 using CrudCloudDb.API.Configuration;
+using CrudCloudDb.API.Middleware;
 using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Application.Services.Implementation;
 using CrudCloudDb.Application.Services.Interfaces;
@@ -197,6 +198,10 @@ try
     // =======================
     // 9️⃣.1 Webhook configuration
     // =======================
+    var urlTest = builder.Configuration.GetSection("WeebhookSettings")["DiscordUrl"];
+
+// Si estás en .NET 6/7, puedes usar Console.WriteLine en Program.cs
+    
     builder.Services.AddHttpClient();
     builder.Services.Configure<WebhookSettings>(options =>
     {
@@ -349,6 +354,7 @@ try
     // 1️⃣3️⃣ Middleware Configuration
     // =======================
     app.UseCors("AllowAll");
+    app.UseMiddleware<ErrorHandlingMiddleware>();
 
     if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
     {

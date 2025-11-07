@@ -16,13 +16,17 @@ namespace CrudCloudDb.API.Controllers
     {
         private readonly IDatabaseService _databaseService;
         private readonly ILogger<DatabasesController> _logger;
+        private readonly IWebhookService _webhookService;
 
         public DatabasesController(
             IDatabaseService databaseService,
-            ILogger<DatabasesController> logger)
+            ILogger<DatabasesController> logger, 
+            IWebhookService webhookService)
+            
         {
             _databaseService = databaseService;
             _logger = logger;
+            _webhookService = webhookService;
         }
 
         /// <summary>
@@ -30,7 +34,6 @@ namespace CrudCloudDb.API.Controllers
         /// </summary>
         private Guid GetCurrentUserId()
         {
-            // ⭐ LEE EL USER ID DEL TOKEN JWT
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userIdClaim))
             {
@@ -78,7 +81,10 @@ namespace CrudCloudDb.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error desconocido al intentar crear la base de datos.");
-                return BadRequest(new { success = false, message = ex.Message });
+                //return BadRequest(new { success = false, message = ex.Message });
+                await _webhookService.SendErrorNotificationAsync(ex,
+                    "Error al intentar crear la base de datos (CreateDatabase)");
+                return StatusCode(500, new { message = "Ocurrió un error interno en el servidor. El equipo ha sido notificado." });
             }
         }
 
@@ -108,11 +114,6 @@ namespace CrudCloudDb.API.Controllers
             {
                 _logger.LogWarning("Acceso no autorizado al intentar obtener bases de datos. Mensaje: {ErrorMessage}.", ex.Message);
                 return Unauthorized(new { success = false, message = "User not authenticated" });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error desconocido al intentar obtener las bases de datos.");
-                return BadRequest(new { success = false, message = ex.Message });
             }
         }
 
@@ -155,11 +156,6 @@ namespace CrudCloudDb.API.Controllers
                 return StatusCode(StatusCodes.Status403Forbidden, 
                     new { success = false, message = "You don't have access to this database" });
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error desconocido al intentar obtener la base de datos {DatabaseId}.", id);
-                return BadRequest(new { success = false, message = ex.Message });
-            }
         }
 
         // ============================================
@@ -199,11 +195,6 @@ namespace CrudCloudDb.API.Controllers
                 _logger.LogWarning("Acceso denegado a la base de datos {DatabaseId} para el usuario {UserId}. Mensaje: {ErrorMessage}.", id, userId, ex.Message);
                 return StatusCode(StatusCodes.Status403Forbidden,   
                     new { success = false, message = "You don't have access to this database" });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error desconocido al intentar eliminar la base de datos {DatabaseId}. Usuario: {UserId}", id, userId);
-                return BadRequest(new { success = false, message = ex.Message });
             }
         }
 
@@ -247,11 +238,6 @@ namespace CrudCloudDb.API.Controllers
             {
                 _logger.LogWarning("Base de datos no encontrada (KeyNotFoundException). DB ID: {DatabaseId}.", id);
                 return NotFound(new { success = false, message = "Database not found" });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error desconocido al intentar resetear la contraseña para la base de datos {DatabaseId}. Usuario: {UserId}", id, userId);
-                return BadRequest(new { success = false, message = ex.Message });
             }
         }
 
@@ -298,11 +284,6 @@ namespace CrudCloudDb.API.Controllers
             catch (InvalidOperationException ex)
             {
                 _logger.LogWarning("Operación de restauración inválida para la DB {DatabaseId}. Mensaje: {ErrorMessage}.", id, ex.Message);
-                return BadRequest(new { success = false, message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error desconocido al intentar restaurar la base de datos {DatabaseId}. Usuario: {UserId}", id, userId);
                 return BadRequest(new { success = false, message = ex.Message });
             }
         }
