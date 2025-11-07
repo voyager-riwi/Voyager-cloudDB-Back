@@ -94,3 +94,4 @@ DockerLearning/
 DockerTest/
 DockerExperiments/
 tests/appsettings.Production.json
+ssl/
