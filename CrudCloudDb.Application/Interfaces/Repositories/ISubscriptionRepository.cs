@@ -5,4 +5,5 @@ namespace CrudCloudDb.Application.Interfaces.Repositories;
 public interface ISubscriptionRepository
 {
     Task<Subscription> CreateAsync(Subscription subscription);
+    Task<Subscription?> FindByOrderIdAsync(string orderId);
 }

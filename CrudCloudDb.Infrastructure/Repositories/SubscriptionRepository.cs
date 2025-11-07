@@ -1,6 +1,7 @@
 ﻿using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Core.Entities;
 using CrudCloudDb.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore; 
 
 namespace CrudCloudDb.Infrastructure.Repositories;
 
@@ -17,5 +18,11 @@ public class SubscriptionRepository : ISubscriptionRepository
     {
         await _context.Subscriptions.AddAsync(subscription);
         return subscription;
+    }
+    
+    public async Task<Subscription?> FindByOrderIdAsync(string orderId)
+    {
+        return await _context.Subscriptions
+            .FirstOrDefaultAsync(s => s.MercadoPagoOrderId == orderId);
     }
 }

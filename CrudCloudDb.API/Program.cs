@@ -17,7 +17,7 @@ using Serilog;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
 using MercadoPago.Config; 
 using CrudCloudDb.Application.Configuration;
-
+using MercadoPago.Config;
 
 // =======================
 // 2️⃣ Serilog Bootstrap Configuration
@@ -29,8 +29,9 @@ Log.Logger = new LoggerConfiguration()
     .CreateBootstrapLogger();
 
 var tempConfig = new ConfigurationBuilder()
-    .AddJsonFile("appsettings.json")
-    .Build();
+     .AddJsonFile("appsettings.json")
+     .Build();
+MercadoPagoConfig.AccessToken = tempConfig["MercadoPagoSettings:AccessToken"];
 
 MercadoPagoConfig.AccessToken = tempConfig["MercadoPagoSettings:AccessToken"];
 
@@ -46,6 +47,12 @@ try
     // 4️⃣ Builder Initialization
     // =======================
     var builder = WebApplication.CreateBuilder(args);
+    var mercadoPagoAccessToken = builder.Configuration["MercadoPagoSettings:AccessToken"];
+    if (string.IsNullOrEmpty(mercadoPagoAccessToken))
+    {
+        throw new InvalidOperationException("El AccessToken de Mercado Pago no está configurado.");
+    }
+    MercadoPagoConfig.AccessToken = mercadoPagoAccessToken;
 
     // =======================
     // 5️⃣ Serilog Full Integration
