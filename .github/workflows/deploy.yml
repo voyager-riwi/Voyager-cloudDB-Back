@@ -88,23 +88,83 @@ jobs:
               tar -czf dist-backup-$(date +%Y%m%d-%H%M%S).tar.gz dist
             fi
             
-            echo "🚀 Deploying new version..."
-            tar -xzf dist.tar.gz --overwrite
+            echo "🛑 Stopping current containers..."
+            docker stop crudclouddb_backend || true
+            docker rm crudclouddb_backend || true
+            docker-compose down || true
             
             echo "🐳 Building Docker image..."
             docker stop frontend || true
             docker rm frontend || true
             docker build -t vue-frontend .
             
-            echo "🎯 Starting container..."
+            echo "▶️  Starting backend container..."
             docker run -d \
               -p 80:80 \
               --name frontend \
               --restart unless-stopped \
-              vue-frontend
+              --network host \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -e ASPNETCORE_ENVIRONMENT=Production \
+              -e ASPNETCORE_URLS=http://+:5191 \
+              -e DB_HOST=${{ secrets.DB_HOST }} \
+              -e DB_PORT=${{ secrets.DB_PORT }} \
+              -e DB_NAME=${{ secrets.DB_NAME }} \
+              -e DB_USER=${{ secrets.DB_USER }} \
+              -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              -e JWT_SECRET=${{ secrets.JWT_SECRET }} \
+              -e JWT_ISSUER=CrudCloudDb.API \
+              -e JWT_AUDIENCE=CrudCloudDb.Frontend \
+              -e SMTP_SERVER=smtp.gmail.com \
+              -e SMTP_PORT=587 \
+              -e SMTP_SENDER_EMAIL=${{ secrets.SMTP_SENDER_EMAIL }} \
+              -e SMTP_SENDER_NAME=PotterCloud \
+              -e SMTP_USERNAME=${{ secrets.SMTP_USERNAME }} \
+              -e SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }} \
+              -e SMTP_ENABLE_SSL=true \
+              -e DB_HOST_POSTGRESQL=${{ secrets.DB_HOST_POSTGRESQL }} \
+              -e DB_HOST_MYSQL=${{ secrets.DB_HOST_MYSQL }} \
+              -e DB_HOST_MONGODB=${{ secrets.DB_HOST_MONGODB }} \
+              -e DISCORD_WEBHOOK_URL=${{ secrets.DISCORD_WEBHOOK_URL }} \
+              -e MERCADOPAGO_ACCESS_TOKEN=${{ secrets.MERCADOPAGO_ACCESS_TOKEN }} \
+              -e MERCADOPAGO_PUBLIC_KEY=${{ secrets.MERCADOPAGO_PUBLIC_KEY }} \
+              crudclouddb-api:latest
             
-            # Cleanup
-            echo "🧹 Cleaning up..."
-            docker system prune -f
+            echo "⏳ Waiting for backend..."
+            sleep 5
             
+            if docker ps | grep -q crudclouddb_backend; then
+              echo "✅ Backend container running!"
+              
+              echo "🏥 Testing backend endpoint..."
+              curl -f http://localhost:5191/health || echo "⚠️ Backend health check failed"
+              
+            else
+              echo "❌ Backend container failed!"
+              docker logs crudclouddb_backend
+              exit 1
+            fi
+            
+            echo "🌐 Starting NGINX..."
+            docker-compose up -d
+            
+            echo "⏳ Waiting for NGINX..."
+            sleep 3
+            
+            echo "🏥 Testing via NGINX (port 80)..."
+            curl -f http://localhost/health || echo "⚠️ NGINX health check failed"
+            
+            echo "🧹 Cleaning up old images..."
+            docker image prune -f
+            
+            echo "📋 Recent backend logs:"
+            docker logs --tail 30 crudclouddb_backend
+            
+            echo "📊 Container status:"
+            docker ps | grep -E "crudclouddb_backend|voyager-backend-nginx"
+            
+            echo "========================================="
             echo "✅ Deployment completed successfully!"
+            echo "🌐 Backend API: http://service.voyager.andrescortes.dev"
+            echo "📚 Swagger: http://service.voyager.andrescortes.dev/swagger"
+            echo "🏥 Health: http://service.voyager.andrescortes.dev/health"
