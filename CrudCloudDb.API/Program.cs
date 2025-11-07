@@ -42,9 +42,6 @@ var tempConfig = new ConfigurationBuilder()
 // Esto se sobreescribirá después de cargar .env si es necesario
 MercadoPagoConfig.AccessToken = tempConfig["MercadoPagoSettings:AccessToken"] ?? "placeholder";
 
-// =======================
-// 3️⃣ Main Application Block
-// =======================
 
 try
 {
