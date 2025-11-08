@@ -20,7 +20,8 @@ namespace CrudCloudDb.Application.Services.Implementation
         private readonly ILogger<DatabaseService> _logger;
         private readonly IConfiguration _configuration;
         private readonly ICredentialService _credentialService;
-        private readonly IEmailService _emailService;  // ✅ AGREGADO - Faltaba esto
+        private readonly IEmailService _emailService;
+        private readonly IWebhookService _webhookService;
 
         public DatabaseService(
             IDockerService dockerService,
@@ -29,7 +30,8 @@ namespace CrudCloudDb.Application.Services.Implementation
             ILogger<DatabaseService> logger,
             IConfiguration configuration,
             ICredentialService credentialService,
-            IEmailService emailService)  // ✅ AGREGADO - Faltaba esto
+            IEmailService emailService,
+            IWebhookService webhookService)  
         {
             _dockerService = dockerService;
             _databaseRepository = databaseRepository;
@@ -37,7 +39,8 @@ namespace CrudCloudDb.Application.Services.Implementation
             _logger = logger;
             _configuration = configuration;
             _credentialService = credentialService;
-            _emailService = emailService;  // ✅ AGREGADO - Faltaba esto
+            _emailService = emailService;
+            _webhookService = webhookService;
         }
 
         /// <summary>
@@ -122,6 +125,16 @@ namespace CrudCloudDb.Application.Services.Implementation
             // 5. Guardar en BD
             _logger.LogInformation($"💾 Saving database instance to repository");
             await _databaseRepository.CreateAsync(dbInstance);
+            var notificationTitle = "🆕 Nueva Base de Datos Creada";
+            var notificationMessage = 
+                $"**Usuario:** {user.Email} ({user.Id})\n" +
+                $"**Nombre BD:** {dbInstance.Name}\n" +
+                $"**Motor:** {dbInstance.Engine}\n" +
+                $"**Estado:** {dbInstance.Status}\n" +
+                $"**Fecha:** {DateTime.UtcNow.AddHours(-5):dd/MM/yyyy HH:mm:ss} (UTC-5)";
+
+            await _webhookService.SendSuccesNotificationAsync(notificationTitle, notificationMessage);
+            
 
             _logger.LogInformation($"✅ Database {dbInstance.Name} created successfully ({totalDatabasesForEngine + 1}/{user.CurrentPlan.DatabaseLimitPerEngine})");
 
@@ -250,6 +263,14 @@ namespace CrudCloudDb.Application.Services.Implementation
 
             _logger.LogInformation($"💾 Marking database as deleted (30 days grace period, access blocked)");
             await _databaseRepository.UpdateAsync(database);
+            var notificationTitle = "Base de Datos Eliminada";
+            var notificationMessage = $"**Usuario:** {database.User.Id} ({userId})\n" +
+                                      $"**Nombre BD:** {database.Name}\n" +
+                                      $"**Motor:** {database.Engine}\n" +
+                                      $"**ID BD:** {database.Id}";
+                              
+            // Llamamos al nuevo método de advertencia
+            await _webhookService.SendWarningNotificationAsync(notificationTitle, notificationMessage);
 
             // ⭐ PASO 3: Enviar email de notificación
             await _emailService.SendDatabaseDeletedEmailAsync(new DatabaseDeletedEmailDto
