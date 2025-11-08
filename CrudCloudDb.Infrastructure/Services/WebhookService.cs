@@ -168,4 +168,61 @@ public class WebhookService : IWebhookService
             _logger.LogError(ex, "Ocurrio una excepcion al intentar enviar el webhook de error al servidor.");
         }
     }
+
+    public async Task SendSuccesNotificationAsync(string title, string message)
+    {
+        var embed = new
+        {
+            title = $"{title}",
+            description = message,
+            color = 3066993,
+            footer = new { text = $"TimeStamp: {DateTime.UtcNow.AddHours(-5)}" }
+        };
+        
+        await SendDiscordWebhookAsync(embed);
+    }
+    
+    
+    public async Task SendWarningNotificationAsync(string title, string message)
+    {
+        var embed = new
+        {
+            title = $"{title}",
+            description = message,
+            color = 16776960, 
+            footer = new { text = $"Timestamp: {DateTime.UtcNow.AddHours(-5)}" }
+        };
+
+        await SendDiscordWebhookAsync(embed);
+    }
+    
+    private async Task SendDiscordWebhookAsync(object embedPayload)
+    {
+        if (string.IsNullOrEmpty(_webhookSettings.DiscordUrl))
+        {
+            _logger.LogWarning("La url del webhook no ha sido identificada");
+            return;
+        }
+        
+        var payload = new {username = "CrudCloudDb Bot", embeds = new[]{embedPayload}};
+        var jsonPayload = JsonSerializer.Serialize(payload);
+        var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+        try
+        {
+            var httpClient = _httpClientFactory.CreateClient();
+            var response = await httpClient.PostAsync(_webhookSettings.DiscordUrl, content);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("Falló el envio del webhook a Discord, Codigo de estado {statuscode}", response.StatusCode);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ocurrió una excepción al intentar enviar el webhook a Discord.");
+        }
+
+    }
+    
+    
 }

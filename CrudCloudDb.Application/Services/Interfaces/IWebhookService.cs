@@ -6,4 +6,6 @@ public interface IWebhookService
 {
     Task ProcessMercadoPagoNotificationAsync(MercadoPagoNotification notification);
     Task SendErrorNotificationAsync(Exception exception, string contextMessage);
+    Task SendSuccesNotificationAsync(string title, string message);
+    Task SendWarningNotificationAsync(string title, string message);
 }
