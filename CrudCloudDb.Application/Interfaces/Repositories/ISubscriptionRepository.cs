@@ -1,10 +1,11 @@
-﻿﻿using CrudCloudDb.Core.Entities;
+﻿using CrudCloudDb.Core.Entities;
 
 namespace CrudCloudDb.Application.Interfaces.Repositories;
 
 public interface ISubscriptionRepository
 {
     Task<Subscription> CreateAsync(Subscription subscription);
+    Task<Subscription?> FindByOrderIdAsync(string orderId);
     
     /// <summary>
     /// Obtiene todas las suscripciones de un usuario

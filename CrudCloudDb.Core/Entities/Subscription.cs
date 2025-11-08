@@ -21,8 +21,10 @@ namespace CrudCloudDb.Core.Entities
         
         public DateTime EndDate { get; set; }
         
-        public string? MercadoPagoSubscriptionId { get; set; } // O ID de la orden de pago
-        
+        public string? MercadoPagoOrderId { get; set; }
+
+        public string? MercadoPagoPaymentId { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }
