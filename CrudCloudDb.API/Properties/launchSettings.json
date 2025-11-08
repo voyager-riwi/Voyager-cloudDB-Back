@@ -16,7 +16,9 @@
       "launchUrl": "swagger",
       "applicationUrl": "http://localhost:5191",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "MercadoPagoSettings__AccessToken": "APP_USR-8642932100357504-103018-41019bd0a89ab243de2a9a37e093bdb1-2946065922",
+        "MercadoPagoSettings__PublicKey": "APP_USR-2e5b5c04-d243-4926-99f1-6dc11bd8f93a"
       }
     },
     "https": {

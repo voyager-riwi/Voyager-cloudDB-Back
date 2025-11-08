@@ -56,7 +56,7 @@ public class PaymentService : IPaymentService
                         Title = $"Suscripción Plan {plan.Name}",
                         Description = $"Acceso al plan {plan.Name} en PotterCloud.",
                         Quantity = 1,
-                        CurrencyId = "COP", // Moneda Colombiana
+                        CurrencyId = "COP", 
                         UnitPrice = plan.Price,
                     },
                 },
@@ -73,7 +73,6 @@ public class PaymentService : IPaymentService
                     Pending = "https://voyager.andrescortes.dev/payment-pending",
                 },
                 AutoReturn = "approved",
-                // ExternalReference es CRUCIAL para identificar el pago más tarde con webhooks.
                 ExternalReference = $"user:{userId};plan:{plan.Id}",
             };
 
