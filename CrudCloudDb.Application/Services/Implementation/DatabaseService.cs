@@ -123,9 +123,9 @@ namespace CrudCloudDb.Application.Services.Implementation
                 databaseName);
 
             // 5. Guardar en BD
-            _logger.LogInformation($"💾 Saving database instance to repository");
+            _logger.LogInformation($"Saving database instance to repository");
             await _databaseRepository.CreateAsync(dbInstance);
-            var notificationTitle = "🆕 Nueva Base de Datos Creada";
+            var notificationTitle = "Nueva Base de Datos Creada";
             var notificationMessage = 
                 $"**Usuario:** {user.Email} ({user.Id})\n" +
                 $"**Nombre BD:** {dbInstance.Name}\n" +
