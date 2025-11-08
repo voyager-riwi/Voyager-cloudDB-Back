@@ -101,18 +101,15 @@ namespace CrudCloudDb.Application.Services.Implementation
             var user = await _userRepository.GetByEmailAsync(request.Email);
             if (user == null)
             {
-                // Por seguridad, siempre devolvemos un mensaje genérico.
                 return ApiResponse<object>.Success(null, "Si existe una cuenta con este correo, se ha enviado un código de recuperación.");
             }
-
-            // 2. Generamos el token NUMÉRICO de 6 dígitos
+            
             var resetToken = CredentialGenerator.GenerateNumericToken(); 
             user.PasswordResetToken = resetToken;
-            user.PasswordResetExpires = DateTime.UtcNow.AddMinutes(15); // Válido por 15 mins
+            user.PasswordResetExpires = DateTime.UtcNow.AddMinutes(15); 
 
             await _userRepository.UpdateAsync(user);
-
-            // 3. Creamos el DTO para el servicio de correo
+            
             var emailDto = new AccountPasswordResetEmailDto
             {
                 ToEmail = user.Email,
@@ -120,7 +117,6 @@ namespace CrudCloudDb.Application.Services.Implementation
                 ResetToken = resetToken
             };
             
-            // 4. Llamamos al servicio de correo para enviar el email
             await _emailService.SendAccountPasswordResetEmailAsync(emailDto);
             
             return ApiResponse<object>.Success(null, "Si existe una cuenta con este correo, se ha enviado un código de recuperación.");
