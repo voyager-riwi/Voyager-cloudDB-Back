@@ -51,7 +51,8 @@ namespace CrudCloudDb.Infrastructure.Services
 
         public async Task ProcessMercadoPagoNotificationAsync(MercadoPagoNotification notification)
         {
-            _logger.LogInformation("Procesando notificación de Mercado Pago para el recurso: {Resource}", notification.Resource);
+            _logger.LogInformation("Procesando notificación de Mercado Pago para el recurso: {Resource}",
+                notification.Resource);
 
             if (notification.Topic != "merchant_order")
             {
@@ -63,14 +64,16 @@ namespace CrudCloudDb.Infrastructure.Services
             {
                 var orderIdStr = notification.Resource.Split('/').Last();
                 var orderId = long.Parse(orderIdStr);
-                
+
                 var client = new MerchantOrderClient();
                 var merchantOrder = await client.GetAsync(orderId);
-                
+
                 var existingSubscription = await _subscriptionRepository.FindByOrderIdAsync(orderIdStr);
                 if (existingSubscription != null)
                 {
-                    _logger.LogWarning("La orden de pago {OrderId} ya fue procesada anteriormente. Se ignora la notificación duplicada.", orderId);
+                    _logger.LogWarning(
+                        "La orden de pago {OrderId} ya fue procesada anteriormente. Se ignora la notificación duplicada.",
+                        orderId);
                     return;
                 }
 
@@ -91,21 +94,25 @@ namespace CrudCloudDb.Infrastructure.Services
                         if (user != null && plan != null)
                         {
                             var oldPlanName = user.CurrentPlan?.Name ?? "N/A";
-                            
+
                             using (var transaction = await _context.Database.BeginTransactionAsync())
                             {
                                 try
                                 {
                                     user.CurrentPlanId = planId;
                                     await _userRepository.UpdateAsync(user);
-                                    _logger.LogInformation("Plan del usuario {UserId} actualizado a {PlanId} dentro de la transacción.", userId, planId);
+                                    _logger.LogInformation(
+                                        "Plan del usuario {UserId} actualizado a {PlanId} dentro de la transacción.",
+                                        userId, planId);
 
                                     var payment = merchantOrder.Payments.FirstOrDefault(p => p.Status == "approved");
                                     if (payment != null)
                                     {
                                         var paymentId = payment.Id.ToString();
-                                        
-                                        _logger.LogWarning("====== PAYMENT ID PARA VALIDACIÓN DE MERCADO PAGO: {PaymentId} ======", paymentId);
+
+                                        _logger.LogWarning(
+                                            "====== PAYMENT ID PARA VALIDACIÓN DE MERCADO PAGO: {PaymentId} ======",
+                                            paymentId);
 
                                         var newSubscription = new Subscription
                                         {
@@ -118,22 +125,27 @@ namespace CrudCloudDb.Infrastructure.Services
                                             MercadoPagoPaymentId = paymentId
                                         };
                                         await _subscriptionRepository.CreateAsync(newSubscription);
-                                        
+
                                         await _context.SaveChangesAsync();
-                                        _logger.LogInformation("Registro de suscripción creado con Payment ID: {PaymentId} dentro de la transacción.", paymentId);
+                                        _logger.LogInformation(
+                                            "Registro de suscripción creado con Payment ID: {PaymentId} dentro de la transacción.",
+                                            paymentId);
                                     }
-                                    
+
                                     await transaction.CommitAsync();
-                                    _logger.LogInformation("Transacción completada exitosamente para la orden {OrderId}.", orderId);
+                                    _logger.LogInformation(
+                                        "Transacción completada exitosamente para la orden {OrderId}.", orderId);
                                 }
                                 catch (Exception ex)
                                 {
                                     await transaction.RollbackAsync();
-                                    _logger.LogError(ex, "Error durante la transacción del webhook para la orden {OrderId}. Se revirtieron los cambios.", orderId);
-                                    throw; 
+                                    _logger.LogError(ex,
+                                        "Error durante la transacción del webhook para la orden {OrderId}. Se revirtieron los cambios.",
+                                        orderId);
+                                    throw;
                                 }
                             }
-                            
+
                             await _emailService.SendPlanChangedEmailAsync(new PlanChangedEmailDto
                             {
                                 UserEmail = user.Email,
@@ -146,30 +158,36 @@ namespace CrudCloudDb.Infrastructure.Services
                                 IsRenewal = false
                             });
 
-                            _logger.LogInformation("¡Éxito! El usuario {Email} ahora tiene el plan {PlanName}", user.Email, plan.Name);
+                            _logger.LogInformation("¡Éxito! El usuario {Email} ahora tiene el plan {PlanName}",
+                                user.Email, plan.Name);
                         }
                         else
                         {
-                            _logger.LogWarning("No se pudo encontrar el usuario o el plan desde la referencia externa: {ExternalReference}", externalReference);
+                            _logger.LogWarning(
+                                "No se pudo encontrar el usuario o el plan desde la referencia externa: {ExternalReference}",
+                                externalReference);
                         }
                     }
                 }
                 else if (merchantOrder?.OrderStatus == "rejected")
                 {
-                     _logger.LogWarning("El pago para la orden {OrderId} fue rechazado.", orderId);
+                    _logger.LogWarning("El pago para la orden {OrderId} fue rechazado.", orderId);
                 }
                 else
                 {
-                    _logger.LogInformation("La orden {OrderId} no está lista para procesar. Estado: {OrderStatus}", orderId, merchantOrder?.OrderStatus);
+                    _logger.LogInformation("La orden {OrderId} no está lista para procesar. Estado: {OrderStatus}",
+                        orderId, merchantOrder?.OrderStatus);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error crítico al procesar la notificación de Mercado Pago para el recurso {Resource}", notification.Resource);
+                _logger.LogError(ex,
+                    "Error crítico al procesar la notificación de Mercado Pago para el recurso {Resource}",
+                    notification.Resource);
                 await SendErrorNotificationAsync(ex, "Error crítico procesando webhook de Mercado Pago.");
             }
         }
-        
+
         public async Task SendErrorNotificationAsync(Exception exception, string contextMessage)
         {
             if (string.IsNullOrEmpty(_webhookSettings.DiscordUrl))
@@ -188,7 +206,7 @@ namespace CrudCloudDb.Infrastructure.Services
                     {
                         title = "🚨 Error Inesperado en la API",
                         description = $"**Contexto:** {contextMessage}",
-                        color = 15548997, 
+                        color = 15548997,
                         fields = new[]
                         {
                             new { name = "Tipo de Error", value = exception.GetType().Name, inline = true },
@@ -196,7 +214,8 @@ namespace CrudCloudDb.Infrastructure.Services
                             new
                             {
                                 name = "Stack Trace (resumido)",
-                                value = $"```\n{((exception.StackTrace ?? "No stack trace").Length > 1000 ? (exception.StackTrace ?? "No stack trace")[..1000] + "..." : (exception.StackTrace ?? "No stack trace"))}\n```",
+                                value =
+                                    $"```\n{((exception.StackTrace ?? "No stack trace").Length > 1000 ? (exception.StackTrace ?? "No stack trace")[..1000] + "..." : (exception.StackTrace ?? "No stack trace"))}\n```",
                                 inline = false
                             }
                         },
@@ -230,62 +249,62 @@ namespace CrudCloudDb.Infrastructure.Services
                 _logger.LogError(ex, "Ocurrió una excepción al intentar enviar el webhook de error a Discord.");
             }
         }
-    }
 
-    public async Task SendSuccesNotificationAsync(string title, string message)
-    {
-        var embed = new
-        {
-            title = $"{title}",
-            description = message,
-            color = 3066993,
-            footer = new { text = $"TimeStamp: {DateTime.UtcNow.AddHours(-5)}" }
-        };
-        
-        await SendDiscordWebhookAsync(embed);
-    }
-    
-    
-    public async Task SendWarningNotificationAsync(string title, string message)
-    {
-        var embed = new
-        {
-            title = $"{title}",
-            description = message,
-            color = 16776960, 
-            footer = new { text = $"Timestamp: {DateTime.UtcNow.AddHours(-5)}" }
-        };
 
-        await SendDiscordWebhookAsync(embed);
-    }
-    
-    private async Task SendDiscordWebhookAsync(object embedPayload)
-    {
-        if (string.IsNullOrEmpty(_webhookSettings.DiscordUrl))
+        public async Task SendSuccesNotificationAsync(string title, string message)
         {
-            _logger.LogWarning("La url del webhook no ha sido identificada");
-            return;
-        }
-        
-        var payload = new {username = "CrudCloudDb Bot", embeds = new[]{embedPayload}};
-        var jsonPayload = JsonSerializer.Serialize(payload);
-        var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-
-        try
-        {
-            var httpClient = _httpClientFactory.CreateClient();
-            var response = await httpClient.PostAsync(_webhookSettings.DiscordUrl, content);
-            if (!response.IsSuccessStatusCode)
+            var embed = new
             {
-                _logger.LogError("Falló el envio del webhook a Discord, Codigo de estado {statuscode}", response.StatusCode);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Ocurrió una excepción al intentar enviar el webhook a Discord.");
+                title = $"{title}",
+                description = message,
+                color = 3066993,
+                footer = new { text = $"TimeStamp: {DateTime.UtcNow.AddHours(-5)}" }
+            };
+
+            await SendDiscordWebhookAsync(embed);
         }
 
+
+        public async Task SendWarningNotificationAsync(string title, string message)
+        {
+            var embed = new
+            {
+                title = $"{title}",
+                description = message,
+                color = 16776960,
+                footer = new { text = $"Timestamp: {DateTime.UtcNow.AddHours(-5)}" }
+            };
+
+            await SendDiscordWebhookAsync(embed);
+        }
+
+        private async Task SendDiscordWebhookAsync(object embedPayload)
+        {
+            if (string.IsNullOrEmpty(_webhookSettings.DiscordUrl))
+            {
+                _logger.LogWarning("La url del webhook no ha sido identificada");
+                return;
+            }
+
+            var payload = new { username = "CrudCloudDb Bot", embeds = new[] { embedPayload } };
+            var jsonPayload = JsonSerializer.Serialize(payload);
+            var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+            try
+            {
+                var httpClient = _httpClientFactory.CreateClient();
+                var response = await httpClient.PostAsync(_webhookSettings.DiscordUrl, content);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("Falló el envio del webhook a Discord, Codigo de estado {statuscode}",
+                        response.StatusCode);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ocurrió una excepción al intentar enviar el webhook a Discord.");
+            }
+
+        }
     }
-    
-    
 }

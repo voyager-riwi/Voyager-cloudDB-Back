@@ -195,17 +195,16 @@ try
     // =======================
     // 9️⃣.1 Webhook configuration
     // =======================
-    var urlTest = builder.Configuration.GetSection("WeebhookSettings")["DiscordUrl"];
+    var urlTest = builder.Configuration.GetSection("WebhookSettings")["DiscordUrl"]; // Usamos la clave correcta del appsettings para evitar el error de tipografía
 
-// Si estás en .NET 6/7, puedes usar Console.WriteLine en Program.cs
-    
     builder.Services.AddHttpClient();
     builder.Services.Configure<WebhookSettings>(options =>
     {
         // Leer de variables de entorno con fallback a appsettings
+        // Se corrige el typo en la lectura de la configuración para usar 'WebhookSettings'
         options.DiscordUrl = Environment.GetEnvironmentVariable("DISCORD_WEBHOOK_URL") 
-                            ?? builder.Configuration["WebhookSettings:DiscordUrl"]
-                            ?? string.Empty;
+                             ?? builder.Configuration["WebhookSettings:DiscordUrl"] 
+                             ?? string.Empty;
     });
     builder.Services.AddScoped<IWebhookService, WebhookService>();
     

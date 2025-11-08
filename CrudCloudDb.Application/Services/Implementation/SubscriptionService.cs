@@ -77,7 +77,7 @@ namespace CrudCloudDb.Application.Services.Implementation
                 Status = SubscriptionStatus.Active,
                 StartDate = startDate,
                 EndDate = endDate,
-                MercadoPagoSubscriptionId = mercadoPagoPaymentId,
+                MercadoPagoPaymentId = mercadoPagoPaymentId,
                 CreatedAt = DateTime.UtcNow
             };
 
