@@ -44,7 +44,22 @@ namespace CrudCloudDb.Application.Services.Interfaces
         /// Elimina permanentemente una base de datos del contenedor maestro (después del período de gracia)
         /// </summary>
         Task PermanentlyDeleteDatabaseAsync(DatabaseEngine engine, string dbName, string username);
+
+        /// <summary>
+        /// Obtiene información del contenedor maestro para un motor específico
+        /// </summary>
+        Task<MasterContainerInfo?> GetMasterContainerInfoAsync(DatabaseEngine engine);
+
+        /// <summary>
+        /// Resetea la password de un usuario directamente en el contenedor maestro (sin enviar email)
+        /// </summary>
+        Task ResetPasswordInMasterAsync(
+            MasterContainerInfo masterContainer,
+            string username,
+            string newPassword,
+            DatabaseEngine engine);
     }
+
 
     /// <summary>
     /// Resultado de reseteo de contraseña

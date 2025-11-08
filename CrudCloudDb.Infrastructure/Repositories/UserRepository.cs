@@ -1,4 +1,4 @@
-﻿using CrudCloudDb.Application.DTOs.User;
+﻿﻿using CrudCloudDb.Application.DTOs.User;
 using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Core.Entities;
 using CrudCloudDb.Infrastructure.Data;
@@ -31,7 +31,9 @@ public class UserRepository : IUserRepository
     
     public async Task<User?> GetByIdAsync(Guid id)
     {
-        return await _context.Users.FindAsync(id);
+        return await _context.Users
+            .Include(u => u.CurrentPlan)  // ⭐ Cargar el plan del usuario
+            .FirstOrDefaultAsync(u => u.Id == id);
     }
 
     public async Task<bool> IsEmailTakenAsync(string email)

@@ -55,35 +55,15 @@ namespace CrudCloudDb.Infrastructure.Services
 
         public async Task<MasterContainerInfo> GetOrCreateMasterContainerAsync(DatabaseEngine engine)
         {
-            _logger.LogInformation($"🔍 Getting or creating master container for {engine}");
+            _logger.LogInformation($"🔍 Getting master container info for {engine}");
             
-            // Buscar contenedor maestro existente
-            var existingContainer = await FindMasterContainerAsync(engine);
+            // En producción, los contenedores maestros YA EXISTEN en el servidor remoto
+            // NO intentamos crearlos, solo devolvemos la información
+            var masterInfo = GetRemoteMasterContainerInfo(engine);
             
-            if (existingContainer != null)
-            {
-                _logger.LogInformation($"✅ Found existing master container for {engine}: {existingContainer.ContainerId[..12]}");
-                
-                // Verificar si está corriendo
-                var isRunning = await IsContainerRunningAsync(existingContainer.ContainerId);
-                
-                if (!isRunning)
-                {
-                    _logger.LogInformation($"▶️ Starting stopped master container");
-                    await _dockerClient.Containers.StartContainerAsync(
-                        existingContainer.ContainerId,
-                        new ContainerStartParameters());
-                    
-                    await Task.Delay(3000); // Esperar 3 segundos
-                }
-                
-                existingContainer.IsRunning = true;
-                return existingContainer;
-            }
+            _logger.LogInformation($"✅ Using remote master container for {engine} on {masterInfo.Host}:{masterInfo.Port}");
             
-            // No existe, crear nuevo contenedor maestro
-            _logger.LogInformation($"🐳 Creating new master container for {engine}");
-            return await CreateMasterContainerAsync(engine);
+            return await Task.FromResult(masterInfo);
         }
 
         public async Task<bool> IsMasterContainerRunningAsync(DatabaseEngine engine)
@@ -98,12 +78,36 @@ namespace CrudCloudDb.Infrastructure.Services
 
         public async Task<MasterContainerInfo?> GetMasterContainerInfoAsync(DatabaseEngine engine)
         {
-            return await FindMasterContainerAsync(engine);
+            // Devolver información de los contenedores maestros remotos
+            return await Task.FromResult(GetRemoteMasterContainerInfo(engine));
         }
 
         // ============================================
         // MÉTODOS PRIVADOS
         // ============================================
+
+        /// <summary>
+        /// Devuelve la información de los contenedores maestros remotos que YA EXISTEN en el servidor
+        /// </summary>
+        private MasterContainerInfo GetRemoteMasterContainerInfo(DatabaseEngine engine)
+        {
+            var (adminUser, adminPassword) = GetCredentialsForEngine(engine);
+            var port = GetPortForEngine(engine);
+            
+            // ⭐ Host remoto: 91.98.42.248 (servidor donde están los contenedores maestros)
+            var remoteHost = "91.98.42.248";
+            
+            return new MasterContainerInfo
+            {
+                ContainerId = $"remote-{engine.ToString().ToLower()}", // ID ficticio, no lo usamos para conexiones remotas
+                Engine = engine,
+                Port = port,
+                Host = remoteHost, // ⭐ SERVIDOR REMOTO
+                AdminUsername = adminUser,
+                AdminPassword = adminPassword,
+                IsRunning = true // Asumimos que están corriendo
+            };
+        }
 
         private async Task<MasterContainerInfo?> FindMasterContainerAsync(DatabaseEngine engine)
         {
@@ -140,7 +144,7 @@ namespace CrudCloudDb.Infrastructure.Services
                             ContainerId = masterContainer.ID,
                             Engine = engine,
                             Port = GetPortForEngine(engine),
-                            Host = "172.17.0.1",
+                            Host = "172.17.0.1", // Gateway de Docker - permite que contenedores accedan al host
                             AdminUsername = adminUser,
                             AdminPassword = adminPassword,
                             IsRunning = isRunning
@@ -205,7 +209,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 ContainerId = container.ID,
                 Engine = engine,
                 Port = port,
-                Host = "172.17.0.1",
+                Host = "172.17.0.1", // Gateway de Docker - permite que contenedores accedan al host
                 AdminUsername = adminUser,
                 AdminPassword = adminPassword,
                 IsRunning = true

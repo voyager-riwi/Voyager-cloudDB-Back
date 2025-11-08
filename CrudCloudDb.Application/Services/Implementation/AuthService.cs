@@ -16,18 +16,21 @@ namespace CrudCloudDb.Application.Services.Implementation
         private readonly IPlanRepository _planRepository;
         private readonly IConfiguration _configuration;
         private readonly IEmailService _emailService;
+        private readonly IWebhookService _webhookService;
    
 
         public AuthService(
             IUserRepository userRepository, 
             IPlanRepository planRepository, 
             IConfiguration configuration,
-            IEmailService emailService)
+            IEmailService emailService,
+            IWebhookService webhookService)
         {
             _userRepository = userRepository;
             _planRepository = planRepository;
             _configuration = configuration;
             _emailService = emailService;
+            _webhookService = webhookService;
         }
 
         public async Task<ApiResponse<AuthResponseDto>> LoginAsync(LoginRequestDto request)
@@ -83,6 +86,10 @@ namespace CrudCloudDb.Application.Services.Implementation
             };
 
             var createdUser = await _userRepository.CreateAsync(user);
+
+            var notificationTitle = "Nuevo Usuario Registrado";
+            var notificationMessage = $"**Email:** {createdUser.Email}\n**Nombre:** {createdUser.FirstName} {createdUser.LastName}\n**ID:** {createdUser.Id}";
+            await _webhookService.SendSuccesNotificationAsync(notificationTitle, notificationMessage);
             var token = JwtHelper.GenerateJwtToken(createdUser, _configuration);
             
             var response = new AuthResponseDto
