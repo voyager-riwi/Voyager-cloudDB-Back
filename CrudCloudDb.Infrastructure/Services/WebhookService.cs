@@ -7,14 +7,12 @@ using CrudCloudDb.Core.Entities;
 using CrudCloudDb.Core.Enums;
 using CrudCloudDb.Infrastructure.Data;
 using MercadoPago.Client.MerchantOrder;
+using MercadoPago.Client;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using System;
-using System.Linq;
-using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
+using System.Linq;
 
 namespace CrudCloudDb.Infrastructure.Services
 {
@@ -51,12 +49,12 @@ namespace CrudCloudDb.Infrastructure.Services
 
         public async Task ProcessMercadoPagoNotificationAsync(MercadoPagoNotification notification)
         {
-            _logger.LogInformation("Procesando notificación de Mercado Pago para el recurso: {Resource}",
-                notification.Resource);
+            _logger.LogInformation("📨 Webhook recibido - Recurso: {Resource}, Tópico: {Topic}", 
+                notification.Resource, notification.Topic);
 
             if (notification.Topic != "merchant_order")
             {
-                _logger.LogInformation("Notificación ignorada. Tópico no es 'merchant_order'.");
+                _logger.LogInformation("ℹ️ Notificación ignorada. Tópico '{Topic}' no es 'merchant_order'.", notification.Topic);
                 return;
             }
 
@@ -65,29 +63,63 @@ namespace CrudCloudDb.Infrastructure.Services
                 var orderIdStr = notification.Resource.Split('/').Last();
                 var orderId = long.Parse(orderIdStr);
 
+                _logger.LogInformation("🔍 Consultando orden {OrderId} en MercadoPago...", orderId);
+
                 var client = new MerchantOrderClient();
-                var merchantOrder = await client.GetAsync(orderId);
+                MercadoPago.Resource.MerchantOrder.MerchantOrder? merchantOrder;
+
+                try
+                {
+                    merchantOrder = await client.GetAsync(orderId);
+                }
+                catch (Exception ex) when (ex.Message.Contains("404") || ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning("⚠️ Orden {OrderId} no encontrada en MercadoPago (404). " +
+                        "Esto puede ocurrir con notificaciones de prueba o pagos antiguos. Ignorando. Error: {Error}", 
+                        orderId, ex.Message);
+                    return;
+                }
+
+                if (merchantOrder == null)
+                {
+                    _logger.LogWarning("⚠️ Orden {OrderId} retornó null. Ignorando notificación.", orderId);
+                    return;
+                }
+
+                _logger.LogInformation("📋 Orden {OrderId} obtenida - Status: {Status}, OrderStatus: {OrderStatus}", 
+                    orderId, merchantOrder.Status, merchantOrder.OrderStatus);
 
                 var existingSubscription = await _subscriptionRepository.FindByOrderIdAsync(orderIdStr);
                 if (existingSubscription != null)
                 {
                     _logger.LogWarning(
-                        "La orden de pago {OrderId} ya fue procesada anteriormente. Se ignora la notificación duplicada.",
+                        "⚠️ La orden de pago {OrderId} ya fue procesada anteriormente. Se ignora la notificación duplicada.",
                         orderId);
                     return;
                 }
 
                 if (merchantOrder?.Status == "closed" && merchantOrder.OrderStatus == "paid")
                 {
-                    _logger.LogInformation("Orden de pago {OrderId} fue aprobada y cerrada. Procesando...", orderId);
+                    _logger.LogInformation("✅ Orden de pago {OrderId} fue aprobada y cerrada. Procesando...", orderId);
 
                     var externalReference = merchantOrder.ExternalReference;
+                    
+                    if (string.IsNullOrEmpty(externalReference))
+                    {
+                        _logger.LogError("❌ Orden {OrderId} no tiene ExternalReference. No se puede procesar.", orderId);
+                        return;
+                    }
+
+                    _logger.LogInformation("🔑 ExternalReference: {Reference}", externalReference);
+
                     var parts = externalReference.Split(';');
                     var userIdPart = parts.FirstOrDefault(p => p.StartsWith("user:"))?.Split(':').Last();
                     var planIdPart = parts.FirstOrDefault(p => p.StartsWith("plan:"))?.Split(':').Last();
 
                     if (Guid.TryParse(userIdPart, out var userId) && Guid.TryParse(planIdPart, out var planId))
                     {
+                        _logger.LogInformation("👤 Usuario ID: {UserId}, Plan ID: {PlanId}", userId, planId);
+
                         var user = await _userRepository.GetByIdWithPlanAsync(userId);
                         var plan = await _planRepository.GetByIdAsync(planId);
 
@@ -158,33 +190,62 @@ namespace CrudCloudDb.Infrastructure.Services
                                 IsRenewal = false
                             });
 
-                            _logger.LogInformation("¡Éxito! El usuario {Email} ahora tiene el plan {PlanName}",
+                            _logger.LogInformation("🎉 ¡Éxito! El usuario {Email} ahora tiene el plan {PlanName}",
                                 user.Email, plan.Name);
+
+                            await SendSuccesNotificationAsync(
+                                "✅ Pago Procesado Exitosamente",
+                                $"**Usuario:** {user.Email}\n" +
+                                $"**Plan Anterior:** {oldPlanName}\n" +
+                                $"**Plan Nuevo:** {plan.Name}\n" +
+                                $"**Precio:** ${plan.Price} COP\n" +
+                                $"**Order ID:** {orderId}\n" +
+                                $"**Fecha:** {DateTime.UtcNow.AddHours(-5):dd/MM/yyyy HH:mm:ss} (UTC-5)");
                         }
                         else
                         {
-                            _logger.LogWarning(
-                                "No se pudo encontrar el usuario o el plan desde la referencia externa: {ExternalReference}",
-                                externalReference);
+                            _logger.LogError(
+                                "❌ No se pudo encontrar el usuario (exists: {UserExists}) o el plan (exists: {PlanExists}) " +
+                                "desde la referencia externa: {ExternalReference}",
+                                user != null, plan != null, externalReference);
+
+                            await SendWarningNotificationAsync(
+                                "⚠️ Pago Recibido pero Usuario/Plan No Encontrado",
+                                $"**Order ID:** {orderId}\n" +
+                                $"**ExternalReference:** {externalReference}\n" +
+                                $"**Usuario encontrado:** {(user != null ? "Sí" : "No")}\n" +
+                                $"**Plan encontrado:** {(plan != null ? "Sí" : "No")}\n" +
+                                $"**Acción requerida:** Verificar manualmente");
                         }
+                    }
+                    else
+                    {
+                        _logger.LogError("❌ No se pudieron parsear los IDs del ExternalReference: {ExternalReference}", externalReference);
+                        
+                        await SendWarningNotificationAsync(
+                            "⚠️ ExternalReference Inválido",
+                            $"**Order ID:** {orderId}\n" +
+                            $"**ExternalReference:** {externalReference}\n" +
+                            $"**Problema:** No se pudieron extraer userId y planId");
                     }
                 }
                 else if (merchantOrder?.OrderStatus == "rejected")
                 {
-                    _logger.LogWarning("El pago para la orden {OrderId} fue rechazado.", orderId);
+                    _logger.LogWarning("❌ El pago para la orden {OrderId} fue rechazado.", orderId);
                 }
                 else
                 {
-                    _logger.LogInformation("La orden {OrderId} no está lista para procesar. Estado: {OrderStatus}",
-                        orderId, merchantOrder?.OrderStatus);
+                    _logger.LogInformation("ℹ️ La orden {OrderId} no está lista para procesar. " +
+                        "Status: {Status}, OrderStatus: {OrderStatus}",
+                        orderId, merchantOrder?.Status, merchantOrder?.OrderStatus);
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex,
-                    "Error crítico al procesar la notificación de Mercado Pago para el recurso {Resource}",
+                    "❌ Error crítico al procesar la notificación de Mercado Pago para el recurso {Resource}",
                     notification.Resource);
-                await SendErrorNotificationAsync(ex, "Error crítico procesando webhook de Mercado Pago.");
+                await SendErrorNotificationAsync(ex, $"Error crítico procesando webhook de Mercado Pago. Recurso: {notification.Resource}");
             }
         }
 
