@@ -78,10 +78,19 @@ public class PaymentService : IPaymentService
                 AutoReturn = "approved",
                 NotificationUrl = notificationUrl,
                 ExternalReference = $"user:{userId};plan:{plan.Id}",
+                StatementDescriptor = "PotterCloud",
+                BinaryMode = false, // Importante: debe ser false para recibir webhooks
             };
 
+            _logger.LogInformation("📤 Enviando preferencia a MercadoPago...");
             var client = new PreferenceClient();
             Preference preference = await client.CreateAsync(preferenceRequest);
+
+            _logger.LogInformation("📥 Respuesta de MercadoPago recibida:");
+            _logger.LogInformation("  - Preference ID: {PreferenceId}", preference.Id);
+            _logger.LogInformation("  - Init Point: {InitPoint}", preference.InitPoint);
+            _logger.LogInformation("  - Notification URL configurada: {NotificationUrl}", preference.NotificationUrl);
+            _logger.LogInformation("  - External Reference: {ExternalReference}", preference.ExternalReference);
 
             var responseDto = new CreatePreferenceResponseDto
             {
@@ -89,7 +98,7 @@ public class PaymentService : IPaymentService
                 InitPoint = preference.InitPoint,
             };
 
-            _logger.LogInformation("Preferencia de pago creada exitosamente con ID: {PreferenceId}", preference.Id);
+            _logger.LogInformation("✅ Preferencia de pago creada exitosamente con ID: {PreferenceId}", preference.Id);
             return ApiResponse<CreatePreferenceResponseDto>.Success(responseDto, "Preferencia creada exitosamente.");
         }
         catch (Exception ex)

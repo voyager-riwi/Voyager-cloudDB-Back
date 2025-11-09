@@ -46,5 +46,13 @@ namespace CrudCloudDb.API.Controllers
             _logger.LogInformation("✅ Webhook aceptado - Respondiendo 200 OK a MercadoPago");
             return Ok();
         }
+
+        [HttpGet("mercadopago")]
+        [AllowAnonymous]
+        public IActionResult MercadoPagoWebhookTest()
+        {
+            _logger.LogInformation("🔍 Verificación GET del webhook de MercadoPago");
+            return Ok(new { status = "Webhook endpoint is reachable", timestamp = DateTime.UtcNow });
+        }
     }
 }
