@@ -73,6 +73,7 @@ public class PaymentService : IPaymentService
                     Pending = "https://voyager.andrescortes.dev/payment-pending",
                 },
                 AutoReturn = "approved",
+                NotificationUrl = "https://service.voyager.andrescortes.dev/api/Webhooks/mercadopago",
                 ExternalReference = $"user:{userId};plan:{plan.Id}",
             };
 
