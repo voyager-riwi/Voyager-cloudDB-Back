@@ -240,12 +240,104 @@ namespace CrudCloudDb.Infrastructure.Services
                 else if (merchantOrder?.OrderStatus == "rejected")
                 {
                     _logger.LogWarning("❌ El pago para la orden {OrderId} fue rechazado.", orderId);
+                    
+                    // Extraer información del usuario para notificar
+                    var externalReference = merchantOrder.ExternalReference;
+                    if (!string.IsNullOrEmpty(externalReference))
+                    {
+                        var parts = externalReference.Split(';');
+                        var userIdPart = parts.FirstOrDefault(p => p.StartsWith("user:"))?.Split(':').Last();
+                        
+                        if (Guid.TryParse(userIdPart, out var userId))
+                        {
+                            var user = await userRepository.GetByIdAsync(userId);
+                            if (user != null)
+                            {
+                                await SendWarningNotificationAsync(
+                                    "❌ Pago Rechazado",
+                                    $"**Usuario:** {user.Email}\n" +
+                                    $"**Order ID:** {orderId}\n" +
+                                    $"**Estado:** Rechazado\n" +
+                                    $"**Fecha:** {DateTime.UtcNow.AddHours(-5):dd/MM/yyyy HH:mm:ss} (UTC-5)");
+                            }
+                        }
+                    }
                 }
                 else
                 {
+                    // Investigar el estado detallado de los pagos
                     _logger.LogInformation("ℹ️ La orden {OrderId} no está lista para procesar. " +
                         "Status: {Status}, OrderStatus: {OrderStatus}",
                         orderId, merchantOrder?.Status, merchantOrder?.OrderStatus);
+                    
+                    // Log detallado de los pagos asociados
+                    if (merchantOrder?.Payments != null && merchantOrder.Payments.Any())
+                    {
+                        _logger.LogInformation("💳 La orden tiene {Count} pago(s) asociado(s):", merchantOrder.Payments.Count);
+                        
+                        foreach (var payment in merchantOrder.Payments)
+                        {
+                            _logger.LogInformation("  - Payment ID: {PaymentId}, Status: {Status}", 
+                                payment.Id, payment.Status);
+                        }
+                        
+                        // Verificar si hay pagos rechazados
+                        var rejectedPayments = merchantOrder.Payments.Where(p => p.Status == "rejected").ToList();
+                        if (rejectedPayments.Any())
+                        {
+                            _logger.LogWarning("⚠️ Se encontraron {Count} pago(s) rechazado(s):", rejectedPayments.Count);
+                            
+                            foreach (var payment in rejectedPayments)
+                            {
+                                _logger.LogWarning("  ❌ Payment ID: {PaymentId}, Status: rejected", 
+                                    payment.Id);
+                            }
+                            
+                            // Enviar notificación sobre pago rechazado
+                            var externalReference = merchantOrder.ExternalReference;
+                            if (!string.IsNullOrEmpty(externalReference))
+                            {
+                                var parts = externalReference.Split(';');
+                                var userIdPart = parts.FirstOrDefault(p => p.StartsWith("user:"))?.Split(':').Last();
+                                
+                                if (Guid.TryParse(userIdPart, out var userId))
+                                {
+                                    var user = await userRepository.GetByIdAsync(userId);
+                                    if (user != null)
+                                    {
+                                        var rejectedDetails = string.Join("\n", rejectedPayments.Select(p => 
+                                            $"  - Payment ID: {p.Id}, Status: rejected"));
+                                        
+                                        await SendWarningNotificationAsync(
+                                            "⚠️ Pago(s) Rechazado(s) - Requiere Atención",
+                                            $"**Usuario:** {user.Email}\n" +
+                                            $"**Order ID:** {orderId}\n" +
+                                            $"**Estado Orden:** {merchantOrder.Status} / {merchantOrder.OrderStatus}\n" +
+                                            $"**Pagos Rechazados:** {rejectedPayments.Count}\n" +
+                                            $"**Detalles:**\n{rejectedDetails}\n" +
+                                            $"**Fecha:** {DateTime.UtcNow.AddHours(-5):dd/MM/yyyy HH:mm:ss} (UTC-5)");
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Verificar si hay pagos pendientes
+                        var pendingPayments = merchantOrder.Payments.Where(p => p.Status == "pending" || p.Status == "in_process").ToList();
+                        if (pendingPayments.Any())
+                        {
+                            _logger.LogInformation("⏳ Se encontraron {Count} pago(s) pendiente(s):", pendingPayments.Count);
+                            
+                            foreach (var payment in pendingPayments)
+                            {
+                                _logger.LogInformation("  ⏳ Payment ID: {PaymentId}, Status: {Status}", 
+                                    payment.Id, payment.Status);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning("⚠️ La orden {OrderId} no tiene pagos asociados aún.", orderId);
+                    }
                 }
             }
             catch (Exception ex)
