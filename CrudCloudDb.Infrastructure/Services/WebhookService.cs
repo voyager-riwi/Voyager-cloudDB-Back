@@ -14,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Text;
 using System.Text.Json;
 using System.Linq;
+using MercadoPago.Client.Payment; // agregado para PaymentClient
 
 namespace CrudCloudDb.Infrastructure.Services
 {
@@ -58,7 +59,132 @@ namespace CrudCloudDb.Infrastructure.Services
 
             _logger.LogInformation("📍 Topic efectivo: {Topic}, Resource: {Resource}", topic, resource);
 
-            // Solo procesamos merchant_order
+            // NUEVO: manejo del topic payment
+            if (topic == "payment" || topic == "payments")
+            {
+                try
+                {
+                    // payment notifications pueden venir con data.id o con resource /v1/payments/{id}
+                    string paymentIdStr = notification.Data?.Id ?? resource?.Split('/')?.Last() ?? string.Empty;
+                    if (!long.TryParse(paymentIdStr, out var paymentId))
+                    {
+                        _logger.LogWarning("⚠️ Notificación de pago sin ID válido. Resource: {Resource}", resource);
+                        return;
+                    }
+
+                    var paymentClient = new PaymentClient();
+                    var payment = await paymentClient.GetAsync(paymentId);
+
+                    if (payment == null)
+                    {
+                        _logger.LogWarning("⚠️ Pago {PaymentId} no encontrado al consultar Payment API.", paymentId);
+                        return;
+                    }
+
+                    _logger.LogInformation("💳 Pago {PaymentId} - Status: {Status}, StatusDetail: {Detail}", paymentId, payment.Status, payment.StatusDetail);
+
+                    // Evitar reprocesar si ya existe suscripción por este payment
+                    var existing = await subscriptionRepository.FindByOrderIdAsync(paymentId.ToString());
+                    if (existing != null)
+                    {
+                        _logger.LogInformation("ℹ️ El pago {PaymentId} ya fue procesado previamente.", paymentId);
+                        return;
+                    }
+
+                    if (payment.Status == "approved")
+                    {
+                        var externalReference = payment.ExternalReference;
+                        if (string.IsNullOrEmpty(externalReference))
+                        {
+                            _logger.LogWarning("⚠️ Pago {PaymentId} aprobado sin ExternalReference. No se puede asignar usuario/plan.", paymentId);
+                            return;
+                        }
+
+                        var parts = externalReference.Split(';');
+                        var userIdPart = parts.FirstOrDefault(p => p.StartsWith("user:"))?.Split(':').Last();
+                        var planIdPart = parts.FirstOrDefault(p => p.StartsWith("plan:"))?.Split(':').Last();
+
+                        if (!Guid.TryParse(userIdPart, out var userId) || !Guid.TryParse(planIdPart, out var planId))
+                        {
+                            _logger.LogError("❌ ExternalReference inválido en pago {PaymentId}: {ExternalReference}", paymentId, externalReference);
+                            return;
+                        }
+
+                        var user = await userRepository.GetByIdWithPlanAsync(userId);
+                        var plan = await planRepository.GetByIdAsync(planId);
+                        if (user == null || plan == null)
+                        {
+                            _logger.LogError("❌ No se encontró usuario o plan para pago {PaymentId}. user:{UserExists}, plan:{PlanExists}", paymentId, user != null, plan != null);
+                            return;
+                        }
+
+                        var oldPlanName = user.CurrentPlan?.Name ?? "N/A";
+                        using (var tx = await context.Database.BeginTransactionAsync())
+                        {
+                            try
+                            {
+                                user.CurrentPlanId = planId;
+                                await userRepository.UpdateAsync(user);
+
+                                var newSubscription = new Subscription
+                                {
+                                    UserId = userId,
+                                    PlanId = planId,
+                                    Status = SubscriptionStatus.Active,
+                                    StartDate = DateTime.UtcNow,
+                                    EndDate = DateTime.UtcNow.AddMonths(1),
+                                    MercadoPagoOrderId = paymentId.ToString(), // usamos paymentId si no hay orderId
+                                    MercadoPagoPaymentId = paymentId.ToString()
+                                };
+                                await subscriptionRepository.CreateAsync(newSubscription);
+                                await context.SaveChangesAsync();
+                                await tx.CommitAsync();
+                            }
+                            catch (Exception ex)
+                            {
+                                await tx.RollbackAsync();
+                                _logger.LogError(ex, "❌ Error aplicando cambios para pago {PaymentId}.", paymentId);
+                                throw;
+                            }
+                        }
+
+                        await emailService.SendPlanChangedEmailAsync(new PlanChangedEmailDto
+                        {
+                            UserEmail = user.Email,
+                            UserName = user.FirstName,
+                            OldPlanName = oldPlanName,
+                            NewPlanName = plan.Name,
+                            NewPlanPrice = plan.Price,
+                            ChangedAt = DateTime.UtcNow,
+                            NextBillingDate = DateTime.UtcNow.AddMonths(1),
+                            IsRenewal = false
+                        });
+
+                        await SendSuccesNotificationAsync("✅ Pago aprobado (vía payment webhook)",
+                            $"**Usuario:** {user.Email}\n**Plan:** {plan.Name}\n**Payment ID:** {paymentId}\n**StatusDetail:** {payment.StatusDetail}");
+                        return;
+                    }
+                    else if (payment.Status == "rejected" || payment.Status == "cancelled")
+                    {
+                        await SendWarningNotificationAsync("❌ Pago rechazado/cancelado",
+                            $"**Payment ID:** {paymentId}\n**Status:** {payment.Status}\n**StatusDetail:** {payment.StatusDetail}");
+                        return;
+                    }
+                    else
+                    {
+                        _logger.LogInformation("⏳ Pago {PaymentId} con estado {Status}.", paymentId, payment.Status);
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "❌ Error procesando notificación de payment.");
+                    await SendErrorNotificationAsync(ex, "Error procesando webhook topic=payment");
+                    return;
+                }
+            }
+
+            // Solo procesamos merchant_order (flujo existente)
             if (topic != "merchant_order" && topic != "merchant_orders")
             {
                 _logger.LogInformation("ℹ️ Notificación ignorada. Topic '{Topic}' no es 'merchant_order'.", topic);
@@ -469,3 +595,4 @@ namespace CrudCloudDb.Infrastructure.Services
         }
     }
 }
+
