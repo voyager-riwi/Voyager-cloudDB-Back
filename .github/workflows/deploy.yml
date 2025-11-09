@@ -62,6 +62,7 @@ jobs:
               -e DB_HOST_POSTGRESQL=${{ secrets.DB_HOST_POSTGRESQL }} \
               -e DB_HOST_MYSQL=${{ secrets.DB_HOST_MYSQL }} \
               -e DB_HOST_MONGODB=${{ secrets.DB_HOST_MONGODB }} \
+              -e DB_HOST_SQLSERVER=${{ secrets.DB_HOST_SQLSERVER }} \
               -e DISCORD_WEBHOOK_URL=${{ secrets.DISCORD_WEBHOOK_URL }} \
               -e MERCADOPAGO_ACCESS_TOKEN=${{ secrets.MERCADOPAGO_ACCESS_TOKEN }} \
               -e MERCADOPAGO_PUBLIC_KEY=${{ secrets.MERCADOPAGO_PUBLIC_KEY }} \
