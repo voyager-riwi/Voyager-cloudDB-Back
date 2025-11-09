@@ -55,9 +55,14 @@ try
     // =======================
     if (builder.Environment.IsDevelopment())
     {
-        var envFilePath = Path.Combine(Directory.GetCurrentDirectory(), "..", ".env");
+        // Buscar .env en el directorio raíz del proyecto
+        var projectRoot = Directory.GetParent(Directory.GetCurrentDirectory())?.FullName;
+        var envFilePath = projectRoot != null ? Path.Combine(projectRoot, ".env") : Path.Combine(Directory.GetCurrentDirectory(), ".env");
+        
         if (File.Exists(envFilePath))
         {
+            Log.Information("📄 Loading .env from: {EnvPath}", envFilePath);
+            
             foreach (var line in File.ReadAllLines(envFilePath))
             {
                 if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#"))
@@ -66,10 +71,26 @@ try
                 var parts = line.Split('=', 2, StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length == 2)
                 {
-                    Environment.SetEnvironmentVariable(parts[0].Trim(), parts[1].Trim());
+                    var key = parts[0].Trim();
+                    var value = parts[1].Trim();
+                    Environment.SetEnvironmentVariable(key, value);
+                    
+                    // Log solo las primeras letras de valores sensibles
+                    if (key.Contains("TOKEN") || key.Contains("KEY") || key.Contains("PASSWORD") || key.Contains("SECRET"))
+                    {
+                        Log.Information("  ✅ {Key} = {Value}...", key, value.Length > 20 ? value.Substring(0, 20) + "..." : "***");
+                    }
+                    else
+                    {
+                        Log.Information("  ✅ {Key} = {Value}", key, value);
+                    }
                 }
             }
             Log.Information("✅ Loaded .env file for development");
+        }
+        else
+        {
+            Log.Warning("⚠️ .env file not found at: {EnvPath}", envFilePath);
         }
     }
 
@@ -78,16 +99,32 @@ try
     // =======================
     var mercadoPagoAccessToken = Environment.GetEnvironmentVariable("MERCADOPAGO_ACCESS_TOKEN")
                                 ?? builder.Configuration["MercadoPagoSettings:AccessToken"]
-                                ?? "placeholder";
+                                ?? null;
     
-    if (mercadoPagoAccessToken != "placeholder")
+    var mercadoPagoPublicKey = Environment.GetEnvironmentVariable("MERCADOPAGO_PUBLIC_KEY")
+                              ?? builder.Configuration["MercadoPagoSettings:PublicKey"]
+                              ?? null;
+    
+    if (!string.IsNullOrEmpty(mercadoPagoAccessToken))
     {
         MercadoPagoConfig.AccessToken = mercadoPagoAccessToken;
+        
+        var tokenPrefix = mercadoPagoAccessToken.StartsWith("TEST-") ? "TEST" : 
+                         mercadoPagoAccessToken.StartsWith("APP_USR-") ? "PRODUCTION" : "UNKNOWN";
+        
         Log.Information("✅ MercadoPago configured");
+        Log.Information("   Mode: {Mode}", tokenPrefix);
+        Log.Information("   AccessToken: {Token}...", mercadoPagoAccessToken.Substring(0, Math.Min(30, mercadoPagoAccessToken.Length)));
+        
+        if (!string.IsNullOrEmpty(mercadoPagoPublicKey))
+        {
+            Log.Information("   PublicKey: {Key}...", mercadoPagoPublicKey.Substring(0, Math.Min(30, mercadoPagoPublicKey.Length)));
+        }
     }
     else
     {
-        Log.Warning("⚠️ MercadoPago AccessToken not configured");
+        Log.Error("❌ MercadoPago AccessToken NOT CONFIGURED - Payments will NOT work!");
+        Log.Error("   Check MERCADOPAGO_ACCESS_TOKEN environment variable");
     }
 
     // =======================
