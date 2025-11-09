@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using CrudCloudDb.Application.Services.Interfaces;
 using CrudCloudDb.Application.DTOs.Database;
@@ -78,13 +78,18 @@ namespace CrudCloudDb.API.Controllers
                 _logger.LogWarning("Acceso no autorizado al intentar crear DB. Mensaje: {ErrorMessage}.", ex.Message);
                 return Unauthorized(new { success = false, message = "User not authenticated" });
             }
+            catch (InvalidOperationException ex)
+            {
+                // Error de validación de negocio (ej: límite de DBs alcanzado)
+                _logger.LogWarning("Validación fallida al intentar crear DB. Mensaje: {ErrorMessage}.", ex.Message);
+                return BadRequest(new { success = false, message = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error desconocido al intentar crear la base de datos.");
-                //return BadRequest(new { success = false, message = ex.Message });
                 await _webhookService.SendErrorNotificationAsync(ex,
                     "Error al intentar crear la base de datos (CreateDatabase)");
-                return StatusCode(500, new { message = "Ocurrió un error interno en el servidor. El equipo ha sido notificado." });
+                return StatusCode(500, new { success = false, message = "Ocurrió un error interno en el servidor. El equipo ha sido notificado." });
             }
         }
 

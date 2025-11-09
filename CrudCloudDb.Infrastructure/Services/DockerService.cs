@@ -364,11 +364,8 @@ namespace CrudCloudDb.Infrastructure.Services
                     _logger.LogInformation($"🔒 Revoked SELECT on pg_database from {credentials.Username}");
                 }
 
-                // Crear la base de datos
-                await using (var cmd = new NpgsqlCommand($"CREATE DATABASE {dbName} OWNER {master.AdminUsername}", conn))
-                {
-                    await cmd.ExecuteNonQueryAsync();
-                }
+                // Crear la base de datos usando template0 con retry logic
+                await CreateDatabaseWithRetryAsync(conn, dbName, master.AdminUsername);
 
                 _logger.LogInformation($"✅ Created user {credentials.Username} and database {dbName}");
             }
@@ -437,28 +434,63 @@ namespace CrudCloudDb.Infrastructure.Services
             _logger.LogInformation($"✅ PostgreSQL database {dbName} created with ISOLATION (optimized)");
         }
 
+        /// <summary>
+        /// Crea una base de datos PostgreSQL con reintentos en caso de bloqueos de template1
+        /// </summary>
+        private async Task CreateDatabaseWithRetryAsync(NpgsqlConnection conn, string dbName, string owner)
+        {
+            const int maxRetries = 5;
+            const int initialDelayMs = 100;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    // Usar template0 en lugar de template1 para evitar bloqueos
+                    // template0 es inmutable y no tiene locks de concurrencia
+                    await using var cmd = new NpgsqlCommand(
+                        $"CREATE DATABASE {dbName} WITH OWNER = {owner} TEMPLATE = template0 ENCODING = 'UTF8'", 
+                        conn);
+                    await cmd.ExecuteNonQueryAsync();
+                    
+                    if (attempt > 1)
+                    {
+                        _logger.LogInformation($"✅ Database {dbName} created successfully on attempt {attempt}");
+                    }
+                    return; // Éxito
+                }
+                catch (PostgresException ex) when (ex.SqlState == "55006" && attempt < maxRetries)
+                {
+                    // 55006: source database is being accessed by other users
+                    var delayMs = initialDelayMs * (int)Math.Pow(2, attempt - 1); // Exponential backoff
+                    _logger.LogWarning($"⚠️ Database creation blocked (attempt {attempt}/{maxRetries}), retrying in {delayMs}ms...");
+                    await Task.Delay(delayMs);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"❌ Error creating database {dbName} on attempt {attempt}");
+                    throw;
+                }
+            }
+
+            throw new Exception($"Failed to create database {dbName} after {maxRetries} attempts due to template database locks");
+        }
+
         private async Task CreateMySQLDatabaseAsync(
             MasterContainerInfo master,
             string dbName,
             CredentialsResult credentials)
         {
-            var connString = $"Server={master.Host};Port={master.Port};User={master.AdminUsername};Password={master.AdminPassword}";
+            var connString = $"Server={master.Host};Port={master.Port};User={master.AdminUsername};Password={master.AdminPassword};ConnectionTimeout=30;DefaultCommandTimeout=60";
 
             await using var conn = new MySqlConnection(connString);
             await conn.OpenAsync();
 
-            // 🔒 PASO 1: Crear base de datos
-            await using (var cmd = new MySqlCommand($"CREATE DATABASE {dbName}", conn))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
+            // 🔒 PASO 1: Crear base de datos con retry
+            await CreateMySQLDatabaseWithRetryAsync(conn, dbName);
 
-            // 🔒 PASO 2: Crear usuario
-            await using (var cmd = new MySqlCommand(
-                $"CREATE USER '{credentials.Username}'@'%' IDENTIFIED BY '{credentials.Password}'", conn))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
+            // 🔒 PASO 2: Crear usuario con retry
+            await CreateMySQLUserWithRetryAsync(conn, credentials);
 
             // 🔒 PASO 3: Revocar acceso a bases de datos del sistema PRIMERO
             var systemDatabases = new[] { "mysql", "information_schema", "performance_schema", "sys" };
@@ -520,6 +552,83 @@ namespace CrudCloudDb.Infrastructure.Services
             }
 
             _logger.LogInformation($"✅ MySQL database {dbName} created with ISOLATED access (user can only access their own database)");
+        }
+
+        /// <summary>
+        /// Crea una base de datos MySQL con reintentos
+        /// </summary>
+        private async Task CreateMySQLDatabaseWithRetryAsync(MySqlConnection conn, string dbName)
+        {
+            const int maxRetries = 5;
+            const int initialDelayMs = 100;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    await using var cmd = new MySqlCommand($"CREATE DATABASE `{dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci", conn);
+                    await cmd.ExecuteNonQueryAsync();
+                    
+                    if (attempt > 1)
+                    {
+                        _logger.LogInformation($"✅ MySQL database {dbName} created successfully on attempt {attempt}");
+                    }
+                    return;
+                }
+                catch (MySqlException ex) when ((ex.Number == 1205 || ex.Number == 1213) && attempt < maxRetries)
+                {
+                    // 1205: Lock wait timeout exceeded
+                    // 1213: Deadlock found
+                    var delayMs = initialDelayMs * (int)Math.Pow(2, attempt - 1);
+                    _logger.LogWarning($"⚠️ MySQL database creation blocked (attempt {attempt}/{maxRetries}), retrying in {delayMs}ms...");
+                    await Task.Delay(delayMs);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"❌ Error creating MySQL database {dbName} on attempt {attempt}");
+                    throw;
+                }
+            }
+
+            throw new Exception($"Failed to create MySQL database {dbName} after {maxRetries} attempts");
+        }
+
+        /// <summary>
+        /// Crea un usuario MySQL con reintentos
+        /// </summary>
+        private async Task CreateMySQLUserWithRetryAsync(MySqlConnection conn, CredentialsResult credentials)
+        {
+            const int maxRetries = 5;
+            const int initialDelayMs = 100;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    await using var cmd = new MySqlCommand(
+                        $"CREATE USER '{credentials.Username}'@'%' IDENTIFIED BY '{credentials.Password}'", conn);
+                    await cmd.ExecuteNonQueryAsync();
+                    
+                    if (attempt > 1)
+                    {
+                        _logger.LogInformation($"✅ MySQL user {credentials.Username} created successfully on attempt {attempt}");
+                    }
+                    return;
+                }
+                catch (MySqlException ex) when ((ex.Number == 1205 || ex.Number == 1213) && attempt < maxRetries)
+                {
+                    var delayMs = initialDelayMs * (int)Math.Pow(2, attempt - 1);
+                    _logger.LogWarning($"⚠️ MySQL user creation blocked (attempt {attempt}/{maxRetries}), retrying in {delayMs}ms...");
+                    await Task.Delay(delayMs);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"❌ Error creating MySQL user {credentials.Username} on attempt {attempt}");
+                    throw;
+                }
+            }
+
+            throw new Exception($"Failed to create MySQL user {credentials.Username} after {maxRetries} attempts");
         }
 
         private async Task CreateMongoDBDatabaseAsync(

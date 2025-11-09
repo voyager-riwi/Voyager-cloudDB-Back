@@ -2,7 +2,6 @@
 // 1️⃣ Using Statements
 // =======================
 using System.Text;
-using CrudCloudDb.API.Configuration;
 using CrudCloudDb.API.Middleware;
 using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Application.Services.Implementation;
@@ -17,7 +16,6 @@ using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
-using ILogger = Microsoft.Extensions.Logging.ILogger;
 using MercadoPago.Config; 
 using CrudCloudDb.Application.Configuration;
 
@@ -191,12 +189,11 @@ try
     builder.Services.AddScoped<IDatabaseService, DatabaseService>();
     builder.Services.AddScoped<IPortManagerService, PortManagerService>();
     builder.Services.AddScoped<ICredentialService, CredentialService>();
+    builder.Services.AddScoped<ISubscriptionService, SubscriptionService>(); // ✅ FIX: Registrar servicio de suscripciones
     
     // =======================
     // 9️⃣.1 Webhook configuration
     // =======================
-    var urlTest = builder.Configuration.GetSection("WebhookSettings")["DiscordUrl"]; // Usamos la clave correcta del appsettings para evitar el error de tipografía
-
     builder.Services.AddHttpClient();
     builder.Services.Configure<WebhookSettings>(options =>
     {
@@ -294,16 +291,25 @@ try
                 var premiumPlan = new Plan
                 {
                     Id = Guid.NewGuid(),
-                    PlanType = PlanType.Advanced,
+                    PlanType = PlanType.Intermediate, // ✅ FIX: Cambiar de Advanced a Intermediate
                     Name = "Premium Plan",
-                    Price = 9.99m,
+                    Price = 5000m, // 5000 COP
                     DatabaseLimitPerEngine = 5
                 };
+                
+                var maxPlan = new Plan
+                {
+                    Id = Guid.NewGuid(),
+                    PlanType = PlanType.Advanced, // ✅ NUEVO: Plan Max con 10 DBs
+                    Name = "Max Plan",
+                    Price = 10000m, // 10000 COP
+                    DatabaseLimitPerEngine = 10
+                };
 
-                dbContext.Plans.AddRange(freePlan, premiumPlan);
+                dbContext.Plans.AddRange(freePlan, premiumPlan, maxPlan);
                 await dbContext.SaveChangesAsync();
 
-                logger.LogInformation("✅ Plans created: Free (2 DBs/engine), Premium (5 DBs/engine)");
+                logger.LogInformation("✅ Plans created: Free (2 DBs/engine), Premium (5 DBs/engine), Max (10 DBs/engine)");
             }
 
             // Asignar plan Free a usuarios sin plan

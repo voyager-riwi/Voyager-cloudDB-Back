@@ -1,4 +1,4 @@
-﻿using CrudCloudDb.Application.DTOs.Webhook;
+﻿﻿using CrudCloudDb.Application.DTOs.Webhook;
 using CrudCloudDb.Application.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -20,11 +20,12 @@ namespace CrudCloudDb.API.Controllers
 
         [HttpPost("mercadopago")]
         [AllowAnonymous] 
-        public async Task<IActionResult> MercadoPagoWebhook([FromBody] MercadoPagoNotification notification)
+        public IActionResult MercadoPagoWebhook([FromBody] MercadoPagoNotification notification)
         {
             _logger.LogInformation("Notificación de Webhook recibida de Mercado Pago para el recurso: {Resource}", notification.Resource);
             
-            _ = _webhookService.ProcessMercadoPagoNotificationAsync(notification);
+            // Procesar en segundo plano sin esperar (fire and forget)
+            _ = Task.Run(() => _webhookService.ProcessMercadoPagoNotificationAsync(notification));
             
             return Ok();
         }
