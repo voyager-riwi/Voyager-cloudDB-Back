@@ -45,18 +45,8 @@ public class PaymentService : IPaymentService
             return ApiResponse<CreatePreferenceResponseDto>.Fail("El plan seleccionado no existe.");
         }
 
-        // LOGS DETALLADOS PARA DIAGNÓSTICO
-        _logger.LogInformation("🎯 DATOS DE LA PREFERENCIA:");
-        _logger.LogInformation("  👤 Usuario: {UserName} ({UserEmail})", $"{user.FirstName} {user.LastName}", user.Email);
-        _logger.LogInformation("  📦 Plan: {PlanName} (ID: {PlanId})", plan.Name, plan.Id);
-        _logger.LogInformation("  💰 Precio: ${Price} COP", plan.Price);
-        _logger.LogInformation("  🌍 País: Colombia (COP currency)");
-
         try
         {
-            var notificationUrl = "https://service.voyager.andrescortes.dev/api/Webhooks/mercadopago";
-            _logger.LogInformation("🔔 Configurando NotificationUrl para webhooks: {NotificationUrl}", notificationUrl);
-            
             var preferenceRequest = new PreferenceRequest
             {
                 Items = new List<PreferenceItemRequest>
@@ -83,21 +73,11 @@ public class PaymentService : IPaymentService
                     Pending = "https://voyager.andrescortes.dev/payment-pending",
                 },
                 AutoReturn = "approved",
-                NotificationUrl = notificationUrl,
                 ExternalReference = $"user:{userId};plan:{plan.Id}",
-                StatementDescriptor = "PotterCloud",
-                BinaryMode = false, // Importante: debe ser false para recibir webhooks
             };
 
-            _logger.LogInformation("📤 Enviando preferencia a MercadoPago...");
             var client = new PreferenceClient();
             Preference preference = await client.CreateAsync(preferenceRequest);
-
-            _logger.LogInformation("📥 Respuesta de MercadoPago recibida:");
-            _logger.LogInformation("  - Preference ID: {PreferenceId}", preference.Id);
-            _logger.LogInformation("  - Init Point: {InitPoint}", preference.InitPoint);
-            _logger.LogInformation("  - Notification URL configurada: {NotificationUrl}", preference.NotificationUrl);
-            _logger.LogInformation("  - External Reference: {ExternalReference}", preference.ExternalReference);
 
             var responseDto = new CreatePreferenceResponseDto
             {
@@ -105,7 +85,7 @@ public class PaymentService : IPaymentService
                 InitPoint = preference.InitPoint,
             };
 
-            _logger.LogInformation("✅ Preferencia de pago creada exitosamente con ID: {PreferenceId}", preference.Id);
+            _logger.LogInformation("Preferencia de pago creada exitosamente con ID: {PreferenceId}", preference.Id);
             return ApiResponse<CreatePreferenceResponseDto>.Success(responseDto, "Preferencia creada exitosamente.");
         }
         catch (Exception ex)
