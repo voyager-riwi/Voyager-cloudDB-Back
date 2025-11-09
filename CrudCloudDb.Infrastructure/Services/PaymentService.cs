@@ -47,6 +47,9 @@ public class PaymentService : IPaymentService
 
         try
         {
+            var notificationUrl = "https://service.voyager.andrescortes.dev/api/Webhooks/mercadopago";
+            _logger.LogInformation("🔔 Configurando NotificationUrl para webhooks: {NotificationUrl}", notificationUrl);
+            
             var preferenceRequest = new PreferenceRequest
             {
                 Items = new List<PreferenceItemRequest>
@@ -73,6 +76,7 @@ public class PaymentService : IPaymentService
                     Pending = "https://voyager.andrescortes.dev/payment-pending",
                 },
                 AutoReturn = "approved",
+                NotificationUrl = notificationUrl,
                 ExternalReference = $"user:{userId};plan:{plan.Id}",
             };
 

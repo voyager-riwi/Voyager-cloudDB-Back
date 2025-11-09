@@ -49,18 +49,29 @@ namespace CrudCloudDb.Infrastructure.Services
 
         public async Task ProcessMercadoPagoNotificationAsync(MercadoPagoNotification notification)
         {
-            _logger.LogInformation("📨 Webhook recibido - Recurso: {Resource}, Tópico: {Topic}", 
-                notification.Resource, notification.Topic);
+            _logger.LogInformation("📨 ===== PROCESANDO WEBHOOK DE MERCADOPAGO =====");
+            _logger.LogInformation("📋 Tipo: {Type}, Topic: {Topic}, Action: {Action}", 
+                notification.Type, notification.Topic, notification.Action ?? "N/A");
 
-            if (notification.Topic != "merchant_order")
+            // Determinar el topic y resource (soportar formato nuevo y legacy)
+            var topic = !string.IsNullOrEmpty(notification.Type) ? notification.Type : notification.Topic;
+            var resource = !string.IsNullOrEmpty(notification.Data?.Id) 
+                ? $"/merchant_orders/{notification.Data.Id}" 
+                : notification.Resource;
+
+            _logger.LogInformation("📍 Topic efectivo: {Topic}, Resource: {Resource}", topic, resource);
+
+            // Solo procesamos merchant_order
+            if (topic != "merchant_order" && topic != "merchant_orders")
             {
-                _logger.LogInformation("ℹ️ Notificación ignorada. Tópico '{Topic}' no es 'merchant_order'.", notification.Topic);
+                _logger.LogInformation("ℹ️ Notificación ignorada. Topic '{Topic}' no es 'merchant_order'.", topic);
                 return;
             }
 
             try
             {
-                var orderIdStr = notification.Resource.Split('/').Last();
+                // Extraer el ID de la orden
+                var orderIdStr = resource.Split('/').Last();
                 var orderId = long.Parse(orderIdStr);
 
                 _logger.LogInformation("🔍 Consultando orden {OrderId} en MercadoPago...", orderId);
