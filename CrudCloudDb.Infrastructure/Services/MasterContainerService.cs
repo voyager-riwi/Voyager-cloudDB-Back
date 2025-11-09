@@ -18,6 +18,7 @@ namespace CrudCloudDb.Infrastructure.Services
         private const int POSTGRES_PORT = 5432;
         private const int MYSQL_PORT = 3306;
         private const int MONGODB_PORT = 27017;
+        private const int SQLSERVER_PORT = 1433;
 
         public MasterContainerService(ILogger<MasterContainerService> logger)
         {
@@ -119,6 +120,7 @@ namespace CrudCloudDb.Infrastructure.Services
                     DatabaseEngine.PostgreSQL => new[] { "postgres", "voyager_master_postgresql" },
                     DatabaseEngine.MySQL => new[] { "mysql", "voyager_master_mysql" },
                     DatabaseEngine.MongoDB => new[] { "voyager_master_mongodb", "mongo" },
+                    DatabaseEngine.SQLServer => new[] { "sqlserver", "voyager_master_sqlserver" },
                     _ => Array.Empty<string>()
                 };
                 
@@ -168,6 +170,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 DatabaseEngine.PostgreSQL => ("postgres", "cambiarestapassword"),
                 DatabaseEngine.MySQL => ("root", "cambiarestapassword"),
                 DatabaseEngine.MongoDB => ("admin", "SecureMongoPass2024!"),  // ✅ CORRECTA
+                DatabaseEngine.SQLServer => ("sa", "YourStrong!Passw0rd"),
                 _ => throw new NotSupportedException()
             };
         }
@@ -185,6 +188,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 DatabaseEngine.PostgreSQL => CreatePostgreSQLMasterConfig(containerName, port, adminUser, adminPassword),
                 DatabaseEngine.MySQL => CreateMySQLMasterConfig(containerName, port, adminPassword),
                 DatabaseEngine.MongoDB => CreateMongoDBMasterConfig(containerName, port, adminUser, adminPassword),
+                DatabaseEngine.SQLServer => CreateSQLServerMasterConfig(containerName, port, adminPassword),
                 _ => throw new NotSupportedException($"Engine {engine} not supported")
             };
             
@@ -309,6 +313,38 @@ namespace CrudCloudDb.Infrastructure.Services
             };
         }
 
+        private CreateContainerParameters CreateSQLServerMasterConfig(string name, int port, string adminPassword)
+        {
+            return new CreateContainerParameters
+            {
+                Image = "mcr.microsoft.com/mssql/server:2022-latest",
+                Name = name,
+                Env = new List<string>
+                {
+                    "ACCEPT_EULA=Y",  // ⭐ Obligatorio para SQL Server
+                    $"SA_PASSWORD={adminPassword}",
+                    "MSSQL_PID=Express"  // Usar SQL Server Express (gratuito)
+                },
+                HostConfig = new HostConfig
+                {
+                    PortBindings = new Dictionary<string, IList<PortBinding>>
+                    {
+                        {
+                            "1433/tcp",
+                            new List<PortBinding>
+                            {
+                                new PortBinding { HostPort = port.ToString() }
+                            }
+                        }
+                    },
+                    RestartPolicy = new RestartPolicy
+                    {
+                        Name = RestartPolicyKind.UnlessStopped
+                    }
+                }
+            };
+        }
+
         private string GetMasterContainerName(DatabaseEngine engine)
         {
             return $"voyager_master_{engine.ToString().ToLower()}";
@@ -321,6 +357,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 DatabaseEngine.PostgreSQL => POSTGRES_PORT,
                 DatabaseEngine.MySQL => MYSQL_PORT,
                 DatabaseEngine.MongoDB => MONGODB_PORT,
+                DatabaseEngine.SQLServer => SQLSERVER_PORT,
                 _ => throw new NotSupportedException()
             };
         }
