@@ -10,6 +10,7 @@ using MercadoPago.Client.MerchantOrder;
 using MercadoPago.Client;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
 using System.Text;
 using System.Text.Json;
 using System.Linq;
@@ -19,32 +20,20 @@ namespace CrudCloudDb.Infrastructure.Services
     public class WebhookService : IWebhookService
     {
         private readonly ILogger<WebhookService> _logger;
-        private readonly IUserRepository _userRepository;
-        private readonly IPlanRepository _planRepository;
-        private readonly ISubscriptionRepository _subscriptionRepository;
-        private readonly IEmailService _emailService;
+        private readonly IServiceScopeFactory _serviceScopeFactory;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly WebhookSettings _webhookSettings;
-        private readonly ApplicationDbContext _context;
 
         public WebhookService(
             ILogger<WebhookService> logger,
-            IUserRepository userRepository,
-            IPlanRepository planRepository,
-            ISubscriptionRepository subscriptionRepository,
-            IEmailService emailService,
+            IServiceScopeFactory serviceScopeFactory,
             IHttpClientFactory httpClientFactory,
-            IOptions<WebhookSettings> webhookSettings,
-            ApplicationDbContext context)
+            IOptions<WebhookSettings> webhookSettings)
         {
             _logger = logger;
-            _userRepository = userRepository;
-            _planRepository = planRepository;
-            _subscriptionRepository = subscriptionRepository;
-            _emailService = emailService;
+            _serviceScopeFactory = serviceScopeFactory;
             _httpClientFactory = httpClientFactory;
             _webhookSettings = webhookSettings.Value;
-            _context = context;
         }
 
         public async Task ProcessMercadoPagoNotificationAsync(MercadoPagoNotification notification)
@@ -52,6 +41,14 @@ namespace CrudCloudDb.Infrastructure.Services
             _logger.LogInformation("📨 ===== PROCESANDO WEBHOOK DE MERCADOPAGO =====");
             _logger.LogInformation("📋 Tipo: {Type}, Topic: {Topic}, Action: {Action}", 
                 notification.Type, notification.Topic, notification.Action ?? "N/A");
+
+            // Crear un nuevo scope para las dependencias scoped
+            using var scope = _serviceScopeFactory.CreateScope();
+            var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+            var planRepository = scope.ServiceProvider.GetRequiredService<IPlanRepository>();
+            var subscriptionRepository = scope.ServiceProvider.GetRequiredService<ISubscriptionRepository>();
+            var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
             // Determinar el topic y resource (soportar formato nuevo y legacy)
             var topic = !string.IsNullOrEmpty(notification.Type) ? notification.Type : notification.Topic;
@@ -100,7 +97,7 @@ namespace CrudCloudDb.Infrastructure.Services
                 _logger.LogInformation("📋 Orden {OrderId} obtenida - Status: {Status}, OrderStatus: {OrderStatus}", 
                     orderId, merchantOrder.Status, merchantOrder.OrderStatus);
 
-                var existingSubscription = await _subscriptionRepository.FindByOrderIdAsync(orderIdStr);
+                var existingSubscription = await subscriptionRepository.FindByOrderIdAsync(orderIdStr);
                 if (existingSubscription != null)
                 {
                     _logger.LogWarning(
@@ -131,19 +128,19 @@ namespace CrudCloudDb.Infrastructure.Services
                     {
                         _logger.LogInformation("👤 Usuario ID: {UserId}, Plan ID: {PlanId}", userId, planId);
 
-                        var user = await _userRepository.GetByIdWithPlanAsync(userId);
-                        var plan = await _planRepository.GetByIdAsync(planId);
+                        var user = await userRepository.GetByIdWithPlanAsync(userId);
+                        var plan = await planRepository.GetByIdAsync(planId);
 
                         if (user != null && plan != null)
                         {
                             var oldPlanName = user.CurrentPlan?.Name ?? "N/A";
 
-                            using (var transaction = await _context.Database.BeginTransactionAsync())
+                            using (var transaction = await context.Database.BeginTransactionAsync())
                             {
                                 try
                                 {
                                     user.CurrentPlanId = planId;
-                                    await _userRepository.UpdateAsync(user);
+                                    await userRepository.UpdateAsync(user);
                                     _logger.LogInformation(
                                         "Plan del usuario {UserId} actualizado a {PlanId} dentro de la transacción.",
                                         userId, planId);
@@ -167,9 +164,9 @@ namespace CrudCloudDb.Infrastructure.Services
                                             MercadoPagoOrderId = merchantOrder.Id.ToString(),
                                             MercadoPagoPaymentId = paymentId
                                         };
-                                        await _subscriptionRepository.CreateAsync(newSubscription);
+                                        await subscriptionRepository.CreateAsync(newSubscription);
 
-                                        await _context.SaveChangesAsync();
+                                        await context.SaveChangesAsync();
                                         _logger.LogInformation(
                                             "Registro de suscripción creado con Payment ID: {PaymentId} dentro de la transacción.",
                                             paymentId);
@@ -189,7 +186,7 @@ namespace CrudCloudDb.Infrastructure.Services
                                 }
                             }
 
-                            await _emailService.SendPlanChangedEmailAsync(new PlanChangedEmailDto
+                            await emailService.SendPlanChangedEmailAsync(new PlanChangedEmailDto
                             {
                                 UserEmail = user.Email,
                                 UserName = user.FirstName,
