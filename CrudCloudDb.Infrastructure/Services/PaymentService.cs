@@ -45,6 +45,13 @@ public class PaymentService : IPaymentService
             return ApiResponse<CreatePreferenceResponseDto>.Fail("El plan seleccionado no existe.");
         }
 
+        // LOGS DETALLADOS PARA DIAGNÓSTICO
+        _logger.LogInformation("🎯 DATOS DE LA PREFERENCIA:");
+        _logger.LogInformation("  👤 Usuario: {UserName} ({UserEmail})", $"{user.FirstName} {user.LastName}", user.Email);
+        _logger.LogInformation("  📦 Plan: {PlanName} (ID: {PlanId})", plan.Name, plan.Id);
+        _logger.LogInformation("  💰 Precio: ${Price} COP", plan.Price);
+        _logger.LogInformation("  🌍 País: Colombia (COP currency)");
+
         try
         {
             var notificationUrl = "https://service.voyager.andrescortes.dev/api/Webhooks/mercadopago";
