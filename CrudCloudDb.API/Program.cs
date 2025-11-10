@@ -186,28 +186,46 @@ try
     builder.Services.AddScoped<IAuthService, AuthService>();
     builder.Services.AddScoped<IUserService, UserService>();
     builder.Services.AddScoped<IEmailService, EmailService>();
-    builder.Services.AddScoped<IMasterContainerService, MasterContainerService>();
     builder.Services.AddScoped<IDockerService, DockerService>();
     builder.Services.AddScoped<IDatabaseService, DatabaseService>();
     builder.Services.AddScoped<IPortManagerService, PortManagerService>();
     builder.Services.AddScoped<ICredentialService, CredentialService>();
     
     // =======================
-    // 9️⃣.1 Webhook configuration
+    // 9️⃣.1 MercadoPago Settings Configuration
     // =======================
-    var urlTest = builder.Configuration.GetSection("WebhookSettings")["DiscordUrl"]; // Usamos la clave correcta del appsettings para evitar el error de tipografía
+    builder.Services.Configure<MercadoPagoSettings>(options =>
+    {
+        options.AccessToken = Environment.GetEnvironmentVariable("MERCADOPAGO_ACCESS_TOKEN")
+                             ?? builder.Configuration["MercadoPagoSettings:AccessToken"]
+                             ?? string.Empty;
+        options.PublicKey = Environment.GetEnvironmentVariable("MERCADOPAGO_PUBLIC_KEY")
+                           ?? builder.Configuration["MercadoPagoSettings:PublicKey"]
+                           ?? string.Empty;
+        options.WebhookSecret = Environment.GetEnvironmentVariable("MERCADOPAGO_WEBHOOK_SECRET")
+                               ?? builder.Configuration["MercadoPagoSettings:WebhookSecret"]
+                               ?? string.Empty;
+    });
+    
+    // =======================
+    // 9️⃣.2 Webhook configuration
+    // =======================
+    var urlTest = builder.Configuration.GetSection("WebhookSettings")["DiscordUrl"];
 
     builder.Services.AddHttpClient();
     builder.Services.Configure<WebhookSettings>(options =>
     {
-        // Leer de variables de entorno con fallback a appsettings
-        // Se corrige el typo en la lectura de la configuración para usar 'WebhookSettings'
         options.DiscordUrl = Environment.GetEnvironmentVariable("DISCORD_WEBHOOK_URL") 
                              ?? builder.Configuration["WebhookSettings:DiscordUrl"] 
                              ?? string.Empty;
     });
     builder.Services.AddScoped<IWebhookService, WebhookService>();
     
+    // =======================
+    // 9️⃣.3 SubscriptionService Registration
+    // =======================
+    builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
+    builder.Services.AddScoped<IMasterContainerService, MasterContainerService>();
     
     // =======================
     // 🔟 Controllers Configuration
@@ -291,19 +309,31 @@ try
                     DatabaseLimitPerEngine = 2
                 };
 
-                var premiumPlan = new Plan
+                var intermediatePlan = new Plan
                 {
                     Id = Guid.NewGuid(),
-                    PlanType = PlanType.Advanced,
-                    Name = "Premium Plan",
-                    Price = 9.99m,
+                    PlanType = PlanType.Intermediate,
+                    Name = "Intermediate Plan",
+                    Price = 5000m, // $5.000 COP
                     DatabaseLimitPerEngine = 5
                 };
 
-                dbContext.Plans.AddRange(freePlan, premiumPlan);
+                var advancedPlan = new Plan
+                {
+                    Id = Guid.NewGuid(),
+                    PlanType = PlanType.Advanced,
+                    Name = "Advanced Plan",
+                    Price = 10000m, // $10.000 COP
+                    DatabaseLimitPerEngine = 10
+                };
+
+                dbContext.Plans.AddRange(freePlan, intermediatePlan, advancedPlan);
                 await dbContext.SaveChangesAsync();
 
-                logger.LogInformation("✅ Plans created: Free (2 DBs/engine), Premium (5 DBs/engine)");
+                logger.LogInformation("✅ Plans created:");
+                logger.LogInformation("   - Free: 2 DBs/engine - $0 COP");
+                logger.LogInformation("   - Intermediate: 5 DBs/engine - $5.000 COP/mes");
+                logger.LogInformation("   - Advanced: 10 DBs/engine - $10.000 COP/mes");
             }
 
             // Asignar plan Free a usuarios sin plan
