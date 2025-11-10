@@ -6,6 +6,7 @@ public interface ISubscriptionRepository
 {
     Task<Subscription> CreateAsync(Subscription subscription);
     Task<Subscription?> FindByOrderIdAsync(string orderId);
+    Task<Subscription?> FindByPaymentIdAsync(string paymentId);
     
     /// <summary>
     /// Obtiene todas las suscripciones de un usuario

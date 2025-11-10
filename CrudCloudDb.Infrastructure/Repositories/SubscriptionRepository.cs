@@ -30,6 +30,12 @@ public class SubscriptionRepository : ISubscriptionRepository
             .FirstOrDefaultAsync(s => s.MercadoPagoOrderId == orderId);
     }
 
+    public async Task<Subscription?> FindByPaymentIdAsync(string paymentId)
+    {
+        return await _context.Subscriptions
+            .FirstOrDefaultAsync(s => s.MercadoPagoPaymentId == paymentId);
+    }
+
     // Métodos existentes de 'develop'
     public async Task<List<Subscription>> GetByUserIdAsync(Guid userId)
     {

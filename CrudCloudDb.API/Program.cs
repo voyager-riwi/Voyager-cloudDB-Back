@@ -239,6 +239,9 @@ try
         options.DiscordUrl = Environment.GetEnvironmentVariable("DISCORD_WEBHOOK_URL") 
                              ?? builder.Configuration["WebhookSettings:DiscordUrl"] 
                              ?? string.Empty;
+        options.SignatureSecret = Environment.GetEnvironmentVariable("MERCADOPAGO_WEBHOOK_SECRET")
+                                   ?? builder.Configuration["WebhookSettings:SignatureSecret"]
+                                   ?? string.Empty;
     });
     builder.Services.AddScoped<IWebhookService, WebhookService>();
     

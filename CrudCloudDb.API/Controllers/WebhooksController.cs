@@ -2,6 +2,7 @@
 using CrudCloudDb.Application.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Linq;
 
 namespace CrudCloudDb.API.Controllers
 {
@@ -23,9 +24,12 @@ namespace CrudCloudDb.API.Controllers
         public async Task<IActionResult> MercadoPagoWebhook([FromBody] MercadoPagoNotification notification)
         {
             _logger.LogInformation("Notificación de Webhook recibida de Mercado Pago para el recurso: {Resource}", notification.Resource);
-            
-            _ = _webhookService.ProcessMercadoPagoNotificationAsync(notification);
-            
+
+            var signature = Request.Headers["x-signature"].FirstOrDefault();
+            var requestId = Request.Headers["x-request-id"].FirstOrDefault();
+
+            await _webhookService.ProcessMercadoPagoNotificationAsync(notification, signature, requestId);
+
             return Ok();
         }
     }
