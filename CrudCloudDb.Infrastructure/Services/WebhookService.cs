@@ -75,7 +75,16 @@ namespace CrudCloudDb.Infrastructure.Services
 
             try
             {
-                switch (notification.Topic)
+                // Determinar el topic desde notification.Topic o desde notification.Action
+                var topic = notification.Topic;
+                if (string.IsNullOrWhiteSpace(topic) && !string.IsNullOrWhiteSpace(notification.Action))
+                {
+                    // Extraer el topic desde Action (ej: "payment.updated" -> "payment")
+                    topic = notification.Action.Split('.').FirstOrDefault() ?? string.Empty;
+                    _logger.LogInformation("📌 Topic extraído desde Action: {Topic}", topic);
+                }
+
+                switch (topic)
                 {
                     case "payment":
                         await HandlePaymentAsync(numericId, requestId, null, resources);
@@ -84,7 +93,7 @@ namespace CrudCloudDb.Infrastructure.Services
                         await HandleMerchantOrderAsync(numericId, requestId, resources);
                         break;
                     default:
-                        _logger.LogWarning("⚠️ Tópico '{Topic}' no soportado actualmente.", notification.Topic);
+                        _logger.LogWarning("⚠️ Tópico '{Topic}' no soportado actualmente.", topic);
                         break;
                 }
             }
