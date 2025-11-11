@@ -66,6 +66,8 @@ jobs:
               -e DISCORD_WEBHOOK_URL=${{ secrets.DISCORD_WEBHOOK_URL }} \
               -e MERCADOPAGO_ACCESS_TOKEN=${{ secrets.MERCADOPAGO_ACCESS_TOKEN }} \
               -e MERCADOPAGO_PUBLIC_KEY=${{ secrets.MERCADOPAGO_PUBLIC_KEY }} \
+              -e MERCADOPAGO_NOTIFICATION_URL=${{ secrets.MERCADOPAGO_NOTIFICATION_URL }} \
+              -e MERCADOPAGO_WEBHOOK_SECRET=${{ secrets.MERCADOPAGO_WEBHOOK_SECRET }} \
               crudclouddb-api:latest
             
             echo "⏳ Waiting for backend..."
