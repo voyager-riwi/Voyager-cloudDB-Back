@@ -1,6 +1,9 @@
-﻿namespace CrudCloudDb.Application.Services.DTOs.Payment;
+﻿using System.ComponentModel.DataAnnotations;
 
-public class CreateSubscriptionDto
+namespace CrudCloudDb.Application.DTOs.Payment;
+
+public class CreatePreferenceRequestDto
 {
-    
+    [Required(ErrorMessage = "El ID del plan es obligatorio.")]
+    public Guid PlanId { get; set; }
 }

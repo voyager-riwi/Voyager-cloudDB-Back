@@ -1,6 +1,9 @@
-﻿namespace CrudCloudDb.Application.Interfaces.Repositories;
+﻿using CrudCloudDb.Core.Entities;
 
-public class IAuditLogRepository
+namespace CrudCloudDb.Application.Interfaces.Repositories
 {
-    
+    public interface IAuditLogRepository
+    {
+        Task AddAsync(AuditLog log);
+    }
 }

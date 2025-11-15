@@ -6,7 +6,7 @@ namespace CrudCloudDb.Core.Entities
 {
     public class Plan
     {
-        public Guid Id { get; set; }
+        public Guid Id { get; set; } = Guid.NewGuid();
 
         [Required]
         public PlanType PlanType { get; set; }
