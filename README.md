@@ -10,7 +10,7 @@
 
 **La plataforma mágica para gestionar bases de datos en la nube** ✨
 
-[Explorar API](https://service.voyager.andrescortes.dev) • [Frontend](https://voyager.andrescortes.dev)
+[Backend API](https://service.voyager.andrescortes.dev) • [Frontend](https://voyager.andrescortes.dev)
 
 </div>
 
@@ -701,3 +701,4 @@ MIT License - Copyright (c) 2025 Voyager Team - RIWI
 ![Status](https://img.shields.io/badge/Status-Production_Ready-success?style=for-the-badge)
 
 </div>
+
