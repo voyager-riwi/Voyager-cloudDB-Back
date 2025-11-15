@@ -1,12 +1,13 @@
 # 🧙‍♂️ PotterCloud - Backend API
 
 <div align="center">
-
-![PotterCloud](https://img.shields.io/badge/PotterCloud-Backend-7B68EE?style=for-the-badge&logo=dotnet)
-![.NET 8.0](https://img.shields.io/badge/.NET-8.0-512BD4?style=for-the-badge&logo=dotnet)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
-![Nginx](https://img.shields.io/badge/Nginx-009639?style=for-the-badge&logo=nginx&logoColor=white)
+   
+![PotterCloud](https://img.shields.io/badge/PotterCloud-Backend-7B68EE?style=for-the-badge&logo=dotnet&logoColor=white)
+![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)
+![C#](https://img.shields.io/badge/C%23-8.0-239120?style=for-the-badge&logo=c-sharp&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-24B5ED?style=for-the-badge&logo=docker&logoColor=white)
+![Nginx](https://img.shields.io/badge/Nginx-1.25-009639?style=for-the-badge&logo=nginx&logoColor=white)
+![MercadoPago Checkout Pro](https://img.shields.io/badge/MercadoPago-Checkout_Pro-003399?style=for-the-badge&logo=mercadopago&logoColor=white)
 
 **La plataforma mágica para gestionar bases de datos en la nube** ✨
 
@@ -701,5 +702,6 @@ MIT License - Copyright (c) 2025 Voyager Team - RIWI
 ![Status](https://img.shields.io/badge/Status-Production_Ready-success?style=for-the-badge)
 
 </div>
+
 
 
