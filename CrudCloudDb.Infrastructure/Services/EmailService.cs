@@ -1,4 +1,4 @@
-﻿﻿using CrudCloudDb.Application.Services.Interfaces;
+﻿﻿﻿using CrudCloudDb.Application.Services.Interfaces;
 using CrudCloudDb.Application.DTOs.Email;
 using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Core.Entities;
@@ -542,16 +542,15 @@ namespace CrudCloudDb.Infrastructure.Services
 
             <div class='warning'>
                 <p><strong>⚠️ IMPORTANTE:</strong></p>
-                <p>• Durante los próximos 30 días, puedes restaurar tu base de datos en cualquier momento.</p>
+                <p>• Durante los próximos 30 días, puedes restaurar tu base de datos desde tu panel de control.</p>
                 <p>• Después del <strong>{permanentDeletionDate:dd/MM/yyyy}</strong>, todos los datos serán eliminados <strong>permanentemente</strong> y no podrán ser recuperados.</p>
-                <p>• La base de datos ya no aparecerá en tu panel, pero puedes contactar a soporte para restaurarla.</p>
+                <p>• Para restaurar, ve a la sección <strong>""Bases de Datos Eliminadas""</strong> en tu dashboard.</p>
             </div>
 
-            <p>Si eliminaste esta base de datos por error, ingresa a tu panel de control y restaura la base de datos antes de la fecha límite.</p>
+            <p>Si eliminaste esta base de datos por error, puedes restaurarla desde tu panel de control en la sección de <strong>""Bases de Datos Eliminadas""</strong> antes de la fecha límite.</p>
 
-            <p style='text-align: center;'>
-                <strong>¿Fue un error? Restaura tu base de datos ahora:</strong><br>
-                <a href='https://service.voyager.andrescortes.dev/databases' class='restore-btn'>🔄 Ir al Panel de Control</a>
+            <p style='text-align: center; color: #6B7280; margin-top: 20px;'>
+                💡 <strong>Tip:</strong> Accede a tu dashboard en <a href='https://voyager.andrescortes.dev' style='color: #F59E0B;'>voyager.andrescortes.dev</a> para restaurar tu base de datos.
             </p>
 
             <p>Saludos,<br><strong>Equipo de PotterCloud</strong></p>

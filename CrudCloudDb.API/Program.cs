@@ -2,7 +2,6 @@
 // 1️⃣ Using Statements
 // =======================
 using System.Text;
-using CrudCloudDb.API.Configuration;
 using CrudCloudDb.API.Middleware;
 using CrudCloudDb.Application.Interfaces.Repositories;
 using CrudCloudDb.Application.Services.Implementation;
@@ -17,7 +16,6 @@ using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
-using ILogger = Microsoft.Extensions.Logging.ILogger;
 using MercadoPago.Config; 
 using CrudCloudDb.Application.Configuration;
 
@@ -57,9 +55,14 @@ try
     // =======================
     if (builder.Environment.IsDevelopment())
     {
-        var envFilePath = Path.Combine(Directory.GetCurrentDirectory(), "..", ".env");
+        // Buscar .env en el directorio raíz del proyecto
+        var projectRoot = Directory.GetParent(Directory.GetCurrentDirectory())?.FullName;
+        var envFilePath = projectRoot != null ? Path.Combine(projectRoot, ".env") : Path.Combine(Directory.GetCurrentDirectory(), ".env");
+        
         if (File.Exists(envFilePath))
         {
+            Log.Information("📄 Loading .env from: {EnvPath}", envFilePath);
+            
             foreach (var line in File.ReadAllLines(envFilePath))
             {
                 if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#"))
@@ -68,10 +71,26 @@ try
                 var parts = line.Split('=', 2, StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length == 2)
                 {
-                    Environment.SetEnvironmentVariable(parts[0].Trim(), parts[1].Trim());
+                    var key = parts[0].Trim();
+                    var value = parts[1].Trim();
+                    Environment.SetEnvironmentVariable(key, value);
+                    
+                    // Log solo las primeras letras de valores sensibles
+                    if (key.Contains("TOKEN") || key.Contains("KEY") || key.Contains("PASSWORD") || key.Contains("SECRET"))
+                    {
+                        Log.Information("  ✅ {Key} = {Value}...", key, value.Length > 20 ? value.Substring(0, 20) + "..." : "***");
+                    }
+                    else
+                    {
+                        Log.Information("  ✅ {Key} = {Value}", key, value);
+                    }
                 }
             }
             Log.Information("✅ Loaded .env file for development");
+        }
+        else
+        {
+            Log.Warning("⚠️ .env file not found at: {EnvPath}", envFilePath);
         }
     }
 
@@ -80,16 +99,32 @@ try
     // =======================
     var mercadoPagoAccessToken = Environment.GetEnvironmentVariable("MERCADOPAGO_ACCESS_TOKEN")
                                 ?? builder.Configuration["MercadoPagoSettings:AccessToken"]
-                                ?? "placeholder";
+                                ?? null;
     
-    if (mercadoPagoAccessToken != "placeholder")
+    var mercadoPagoPublicKey = Environment.GetEnvironmentVariable("MERCADOPAGO_PUBLIC_KEY")
+                              ?? builder.Configuration["MercadoPagoSettings:PublicKey"]
+                              ?? null;
+    
+    if (!string.IsNullOrEmpty(mercadoPagoAccessToken))
     {
         MercadoPagoConfig.AccessToken = mercadoPagoAccessToken;
+        
+        var tokenPrefix = mercadoPagoAccessToken.StartsWith("TEST-") ? "TEST" : 
+                         mercadoPagoAccessToken.StartsWith("APP_USR-") ? "PRODUCTION" : "UNKNOWN";
+        
         Log.Information("✅ MercadoPago configured");
+        Log.Information("   Mode: {Mode}", tokenPrefix);
+        Log.Information("   AccessToken: {Token}...", mercadoPagoAccessToken.Substring(0, Math.Min(30, mercadoPagoAccessToken.Length)));
+        
+        if (!string.IsNullOrEmpty(mercadoPagoPublicKey))
+        {
+            Log.Information("   PublicKey: {Key}...", mercadoPagoPublicKey.Substring(0, Math.Min(30, mercadoPagoPublicKey.Length)));
+        }
     }
     else
     {
-        Log.Warning("⚠️ MercadoPago AccessToken not configured");
+        Log.Error("❌ MercadoPago AccessToken NOT CONFIGURED - Payments will NOT work!");
+        Log.Error("   Check MERCADOPAGO_ACCESS_TOKEN environment variable");
     }
 
     // =======================
@@ -191,12 +226,11 @@ try
     builder.Services.AddScoped<IDatabaseService, DatabaseService>();
     builder.Services.AddScoped<IPortManagerService, PortManagerService>();
     builder.Services.AddScoped<ICredentialService, CredentialService>();
+    builder.Services.AddScoped<ISubscriptionService, SubscriptionService>(); // ✅ FIX: Registrar servicio de suscripciones
     
     // =======================
     // 9️⃣.1 Webhook configuration
     // =======================
-    var urlTest = builder.Configuration.GetSection("WebhookSettings")["DiscordUrl"]; // Usamos la clave correcta del appsettings para evitar el error de tipografía
-
     builder.Services.AddHttpClient();
     builder.Services.Configure<WebhookSettings>(options =>
     {
@@ -205,6 +239,9 @@ try
         options.DiscordUrl = Environment.GetEnvironmentVariable("DISCORD_WEBHOOK_URL") 
                              ?? builder.Configuration["WebhookSettings:DiscordUrl"] 
                              ?? string.Empty;
+        options.SignatureSecret = Environment.GetEnvironmentVariable("MERCADOPAGO_WEBHOOK_SECRET")
+                                   ?? builder.Configuration["WebhookSettings:SignatureSecret"]
+                                   ?? string.Empty;
     });
     builder.Services.AddScoped<IWebhookService, WebhookService>();
     
@@ -294,16 +331,25 @@ try
                 var premiumPlan = new Plan
                 {
                     Id = Guid.NewGuid(),
-                    PlanType = PlanType.Advanced,
+                    PlanType = PlanType.Intermediate, // ✅ FIX: Cambiar de Advanced a Intermediate
                     Name = "Premium Plan",
-                    Price = 9.99m,
+                    Price = 5000m, // 5000 COP
                     DatabaseLimitPerEngine = 5
                 };
+                
+                var maxPlan = new Plan
+                {
+                    Id = Guid.NewGuid(),
+                    PlanType = PlanType.Advanced, // ✅ NUEVO: Plan Max con 10 DBs
+                    Name = "Max Plan",
+                    Price = 10000m, // 10000 COP
+                    DatabaseLimitPerEngine = 10
+                };
 
-                dbContext.Plans.AddRange(freePlan, premiumPlan);
+                dbContext.Plans.AddRange(freePlan, premiumPlan, maxPlan);
                 await dbContext.SaveChangesAsync();
 
-                logger.LogInformation("✅ Plans created: Free (2 DBs/engine), Premium (5 DBs/engine)");
+                logger.LogInformation("✅ Plans created: Free (2 DBs/engine), Premium (5 DBs/engine), Max (10 DBs/engine)");
             }
 
             // Asignar plan Free a usuarios sin plan

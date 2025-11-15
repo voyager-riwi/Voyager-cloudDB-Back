@@ -1,4 +1,4 @@
-﻿using Docker.DotNet;
+﻿﻿using Docker.DotNet;
 using Docker.DotNet.Models;
 using Microsoft.Extensions.Logging;
 using CrudCloudDb.Core.Entities;
@@ -9,6 +9,7 @@ using CrudCloudDb.Application.DTOs.Credential;
 using Npgsql;
 using MySqlConnector;
 using MongoDB.Driver;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 
 namespace CrudCloudDb.Infrastructure.Services
@@ -299,7 +300,7 @@ namespace CrudCloudDb.Infrastructure.Services
 
         // ============================================
         // MÉTODOS PRIVADOS
-        // ============================================
+      
 
         private async Task CreateDatabaseInsideMasterAsync(
             MasterContainerInfo masterContainer,
@@ -319,6 +320,10 @@ namespace CrudCloudDb.Infrastructure.Services
 
                 case DatabaseEngine.MongoDB:
                     await CreateMongoDBDatabaseAsync(masterContainer, databaseName, credentials);
+                    break;
+
+                case DatabaseEngine.SQLServer:
+                    await CreateSQLServerDatabaseAsync(masterContainer, databaseName, credentials);
                     break;
 
                 default:
@@ -364,11 +369,8 @@ namespace CrudCloudDb.Infrastructure.Services
                     _logger.LogInformation($"🔒 Revoked SELECT on pg_database from {credentials.Username}");
                 }
 
-                // Crear la base de datos
-                await using (var cmd = new NpgsqlCommand($"CREATE DATABASE {dbName} OWNER {master.AdminUsername}", conn))
-                {
-                    await cmd.ExecuteNonQueryAsync();
-                }
+                // Crear la base de datos usando template0 con retry logic
+                await CreateDatabaseWithRetryAsync(conn, dbName, master.AdminUsername);
 
                 _logger.LogInformation($"✅ Created user {credentials.Username} and database {dbName}");
             }
@@ -437,28 +439,63 @@ namespace CrudCloudDb.Infrastructure.Services
             _logger.LogInformation($"✅ PostgreSQL database {dbName} created with ISOLATION (optimized)");
         }
 
+        /// <summary>
+        /// Crea una base de datos PostgreSQL con reintentos en caso de bloqueos de template1
+        /// </summary>
+        private async Task CreateDatabaseWithRetryAsync(NpgsqlConnection conn, string dbName, string owner)
+        {
+            const int maxRetries = 5;
+            const int initialDelayMs = 100;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    // Usar template0 en lugar de template1 para evitar bloqueos
+                    // template0 es inmutable y no tiene locks de concurrencia
+                    await using var cmd = new NpgsqlCommand(
+                        $"CREATE DATABASE {dbName} WITH OWNER = {owner} TEMPLATE = template0 ENCODING = 'UTF8'", 
+                        conn);
+                    await cmd.ExecuteNonQueryAsync();
+                    
+                    if (attempt > 1)
+                    {
+                        _logger.LogInformation($"✅ Database {dbName} created successfully on attempt {attempt}");
+                    }
+                    return; // Éxito
+                }
+                catch (PostgresException ex) when (ex.SqlState == "55006" && attempt < maxRetries)
+                {
+                    // 55006: source database is being accessed by other users
+                    var delayMs = initialDelayMs * (int)Math.Pow(2, attempt - 1); // Exponential backoff
+                    _logger.LogWarning($"⚠️ Database creation blocked (attempt {attempt}/{maxRetries}), retrying in {delayMs}ms...");
+                    await Task.Delay(delayMs);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"❌ Error creating database {dbName} on attempt {attempt}");
+                    throw;
+                }
+            }
+
+            throw new Exception($"Failed to create database {dbName} after {maxRetries} attempts due to template database locks");
+        }
+
         private async Task CreateMySQLDatabaseAsync(
             MasterContainerInfo master,
             string dbName,
             CredentialsResult credentials)
         {
-            var connString = $"Server={master.Host};Port={master.Port};User={master.AdminUsername};Password={master.AdminPassword}";
+            var connString = $"Server={master.Host};Port={master.Port};User={master.AdminUsername};Password={master.AdminPassword};ConnectionTimeout=30;DefaultCommandTimeout=60";
 
             await using var conn = new MySqlConnection(connString);
             await conn.OpenAsync();
 
-            // 🔒 PASO 1: Crear base de datos
-            await using (var cmd = new MySqlCommand($"CREATE DATABASE {dbName}", conn))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
+            // 🔒 PASO 1: Crear base de datos con retry
+            await CreateMySQLDatabaseWithRetryAsync(conn, dbName);
 
-            // 🔒 PASO 2: Crear usuario
-            await using (var cmd = new MySqlCommand(
-                $"CREATE USER '{credentials.Username}'@'%' IDENTIFIED BY '{credentials.Password}'", conn))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
+            // 🔒 PASO 2: Crear usuario con retry
+            await CreateMySQLUserWithRetryAsync(conn, credentials);
 
             // 🔒 PASO 3: Revocar acceso a bases de datos del sistema PRIMERO
             var systemDatabases = new[] { "mysql", "information_schema", "performance_schema", "sys" };
@@ -522,6 +559,83 @@ namespace CrudCloudDb.Infrastructure.Services
             _logger.LogInformation($"✅ MySQL database {dbName} created with ISOLATED access (user can only access their own database)");
         }
 
+        /// <summary>
+        /// Crea una base de datos MySQL con reintentos
+        /// </summary>
+        private async Task CreateMySQLDatabaseWithRetryAsync(MySqlConnection conn, string dbName)
+        {
+            const int maxRetries = 5;
+            const int initialDelayMs = 100;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    await using var cmd = new MySqlCommand($"CREATE DATABASE `{dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci", conn);
+                    await cmd.ExecuteNonQueryAsync();
+                    
+                    if (attempt > 1)
+                    {
+                        _logger.LogInformation($"✅ MySQL database {dbName} created successfully on attempt {attempt}");
+                    }
+                    return;
+                }
+                catch (MySqlException ex) when ((ex.Number == 1205 || ex.Number == 1213) && attempt < maxRetries)
+                {
+                    // 1205: Lock wait timeout exceeded
+                    // 1213: Deadlock found
+                    var delayMs = initialDelayMs * (int)Math.Pow(2, attempt - 1);
+                    _logger.LogWarning($"⚠️ MySQL database creation blocked (attempt {attempt}/{maxRetries}), retrying in {delayMs}ms...");
+                    await Task.Delay(delayMs);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"❌ Error creating MySQL database {dbName} on attempt {attempt}");
+                    throw;
+                }
+            }
+
+            throw new Exception($"Failed to create MySQL database {dbName} after {maxRetries} attempts");
+        }
+
+        /// <summary>
+        /// Crea un usuario MySQL con reintentos
+        /// </summary>
+        private async Task CreateMySQLUserWithRetryAsync(MySqlConnection conn, CredentialsResult credentials)
+        {
+            const int maxRetries = 5;
+            const int initialDelayMs = 100;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    await using var cmd = new MySqlCommand(
+                        $"CREATE USER '{credentials.Username}'@'%' IDENTIFIED BY '{credentials.Password}'", conn);
+                    await cmd.ExecuteNonQueryAsync();
+                    
+                    if (attempt > 1)
+                    {
+                        _logger.LogInformation($"✅ MySQL user {credentials.Username} created successfully on attempt {attempt}");
+                    }
+                    return;
+                }
+                catch (MySqlException ex) when ((ex.Number == 1205 || ex.Number == 1213) && attempt < maxRetries)
+                {
+                    var delayMs = initialDelayMs * (int)Math.Pow(2, attempt - 1);
+                    _logger.LogWarning($"⚠️ MySQL user creation blocked (attempt {attempt}/{maxRetries}), retrying in {delayMs}ms...");
+                    await Task.Delay(delayMs);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"❌ Error creating MySQL user {credentials.Username} on attempt {attempt}");
+                    throw;
+                }
+            }
+
+            throw new Exception($"Failed to create MySQL user {credentials.Username} after {maxRetries} attempts");
+        }
+
         private async Task CreateMongoDBDatabaseAsync(
             MasterContainerInfo master,
             string dbName,
@@ -567,6 +681,160 @@ namespace CrudCloudDb.Infrastructure.Services
             _logger.LogInformation($"✅ MongoDB database {dbName} created with MAXIMUM ISOLATION (user can ONLY see and access their own database)");
         }
 
+        private async Task CreateSQLServerDatabaseAsync(
+            MasterContainerInfo master,
+            string dbName,
+            CredentialsResult credentials)
+        {
+            var connString = $"Server={master.Host},{master.Port};Database=master;User Id={master.AdminUsername};Password={master.AdminPassword};TrustServerCertificate=True;Encrypt=False;Connection Timeout=30";
+
+            await using var conn = new SqlConnection(connString);
+            await conn.OpenAsync();
+
+            // 🔒 PASO 1: Crear base de datos con retry
+            await CreateSQLServerDatabaseWithRetryAsync(conn, dbName);
+
+            // 🔒 PASO 2: Crear login a nivel servidor con retry
+            await CreateSQLServerLoginWithRetryAsync(conn, credentials);
+
+            // 🔒 PASO 3: Cambiar a la base de datos recién creada para crear usuario
+            var dbConnString = $"Server={master.Host},{master.Port};Database={dbName};User Id={master.AdminUsername};Password={master.AdminPassword};TrustServerCertificate=True;Encrypt=False;Connection Timeout=30";
+            await using var dbConn = new SqlConnection(dbConnString);
+            await dbConn.OpenAsync();
+
+            // 🔒 PASO 4: Crear usuario en la base de datos y asignar roles
+            await using (var cmd = new SqlCommand(
+                $"CREATE USER [{credentials.Username}] FOR LOGIN [{credentials.Username}]", dbConn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // 🔒 PASO 5: Asignar roles mínimos necesarios
+            // db_datareader: Leer datos
+            // db_datawriter: Escribir datos
+            // db_ddladmin: Crear/modificar esquema (tablas, índices, etc.)
+            var roles = new[] { "db_datareader", "db_datawriter", "db_ddladmin" };
+            foreach (var role in roles)
+            {
+                await using var cmd = new SqlCommand(
+                    $"ALTER ROLE {role} ADD MEMBER [{credentials.Username}]", dbConn);
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // 🔒 PASO 6: Denegar acceso a bases de datos del sistema
+            await using (var masterConn = new SqlConnection(connString))
+            {
+                await masterConn.OpenAsync();
+
+                var systemDatabases = new[] { "master", "model", "msdb", "tempdb" };
+                foreach (var sysDb in systemDatabases)
+                {
+                    try
+                    {
+                        await using var cmd = new SqlCommand(
+                            $"DENY CONNECT TO [{credentials.Username}]", masterConn);
+                        cmd.CommandText = $"USE [{sysDb}]; DENY CONNECT TO [{credentials.Username}]";
+                        await cmd.ExecuteNonQueryAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning($"⚠️ Could not deny access to {sysDb}: {ex.Message}");
+                    }
+                }
+
+                // 🔒 PASO 7: Denegar permisos VIEW DEFINITION a nivel servidor
+                try
+                {
+                    await using var cmd = new SqlCommand(
+                        $"DENY VIEW ANY DATABASE TO [{credentials.Username}]", masterConn);
+                    await cmd.ExecuteNonQueryAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning($"⚠️ Could not deny VIEW ANY DATABASE: {ex.Message}");
+                }
+            }
+
+            _logger.LogInformation($"✅ SQL Server database {dbName} created with ISOLATED access (user can only access their own database)");
+        }
+
+        /// <summary>
+        /// Crea una base de datos SQL Server con reintentos
+        /// </summary>
+        private async Task CreateSQLServerDatabaseWithRetryAsync(SqlConnection conn, string dbName)
+        {
+            const int maxRetries = 5;
+            const int initialDelayMs = 100;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    await using var cmd = new SqlCommand($"CREATE DATABASE [{dbName}]", conn);
+                    await cmd.ExecuteNonQueryAsync();
+                    
+                    if (attempt > 1)
+                    {
+                        _logger.LogInformation($"✅ SQL Server database {dbName} created successfully on attempt {attempt}");
+                    }
+                    return;
+                }
+                catch (SqlException ex) when ((ex.Number == 1205 || ex.Number == 1222) && attempt < maxRetries)
+                {
+                    // 1205: Lock wait timeout exceeded
+                    // 1222: Lock request timeout period exceeded
+                    var delayMs = initialDelayMs * (int)Math.Pow(2, attempt - 1);
+                    _logger.LogWarning($"⚠️ SQL Server database creation blocked (attempt {attempt}/{maxRetries}), retrying in {delayMs}ms...");
+                    await Task.Delay(delayMs);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"❌ Error creating SQL Server database {dbName} on attempt {attempt}");
+                    throw;
+                }
+            }
+
+            throw new Exception($"Failed to create SQL Server database {dbName} after {maxRetries} attempts");
+        }
+
+        /// <summary>
+        /// Crea un login SQL Server con reintentos
+        /// </summary>
+        private async Task CreateSQLServerLoginWithRetryAsync(SqlConnection conn, CredentialsResult credentials)
+        {
+            const int maxRetries = 5;
+            const int initialDelayMs = 100;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    await using var cmd = new SqlCommand(
+                        $"CREATE LOGIN [{credentials.Username}] WITH PASSWORD = '{credentials.Password}', CHECK_POLICY = OFF", conn);
+                    await cmd.ExecuteNonQueryAsync();
+                    
+                    if (attempt > 1)
+                    {
+                        _logger.LogInformation($"✅ SQL Server login {credentials.Username} created successfully on attempt {attempt}");
+                    }
+                    return;
+                }
+                catch (SqlException ex) when ((ex.Number == 1205 || ex.Number == 1222) && attempt < maxRetries)
+                {
+                    var delayMs = initialDelayMs * (int)Math.Pow(2, attempt - 1);
+                    _logger.LogWarning($"⚠️ SQL Server login creation blocked (attempt {attempt}/{maxRetries}), retrying in {delayMs}ms...");
+                    await Task.Delay(delayMs);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"❌ Error creating SQL Server login {credentials.Username} on attempt {attempt}");
+                    throw;
+                }
+            }
+
+            throw new Exception($"Failed to create SQL Server login {credentials.Username} after {maxRetries} attempts");
+        }
+
         private async Task DeleteDatabaseInsideMasterAsync(
             MasterContainerInfo master,
             string dbName,
@@ -585,6 +853,10 @@ namespace CrudCloudDb.Infrastructure.Services
 
                 case DatabaseEngine.MongoDB:
                     await DeleteMongoDBDatabaseAsync(master, dbName, username);
+                    break;
+
+                case DatabaseEngine.SQLServer:
+                    await DeleteSQLServerDatabaseAsync(master, dbName, username);
                     break;
             }
         }
@@ -667,6 +939,45 @@ namespace CrudCloudDb.Infrastructure.Services
             _logger.LogInformation($"✅ MongoDB database {dbName} deleted");
         }
 
+        private async Task DeleteSQLServerDatabaseAsync(
+            MasterContainerInfo master,
+            string dbName,
+            string username)
+        {
+            var connString = $"Server={master.Host},{master.Port};Database=master;User Id={master.AdminUsername};Password={master.AdminPassword};TrustServerCertificate=True;Encrypt=False;Connection Timeout=30";
+
+            await using var conn = new SqlConnection(connString);
+            await conn.OpenAsync();
+
+            // 🔒 PASO 1: Terminar todas las conexiones activas a la base de datos
+            await using (var cmd = new SqlCommand(
+                $"ALTER DATABASE [{dbName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE", conn))
+            {
+                try
+                {
+                    await cmd.ExecuteNonQueryAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning($"⚠️ Could not set database to SINGLE_USER: {ex.Message}");
+                }
+            }
+
+            // 🔒 PASO 2: Eliminar la base de datos
+            await using (var cmd = new SqlCommand($"DROP DATABASE IF EXISTS [{dbName}]", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // 🔒 PASO 3: Eliminar el login
+            await using (var cmd = new SqlCommand($"DROP LOGIN IF EXISTS [{username}]", conn))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            _logger.LogInformation($"✅ SQL Server database {dbName} deleted");
+        }
+
         private async Task ResetPasswordInsideMasterAsync(
             MasterContainerInfo master,
             string username,
@@ -685,6 +996,10 @@ namespace CrudCloudDb.Infrastructure.Services
 
                 case DatabaseEngine.MongoDB:
                     await ResetMongoDBPasswordAsync(master, username, newPassword);
+                    break;
+
+                case DatabaseEngine.SQLServer:
+                    await ResetSQLServerPasswordAsync(master, username, newPassword);
                     break;
             }
         }
@@ -751,6 +1066,23 @@ namespace CrudCloudDb.Infrastructure.Services
             _logger.LogInformation($"✅ MongoDB password reset for {username}");
         }
 
+        private async Task ResetSQLServerPasswordAsync(
+            MasterContainerInfo master,
+            string username,
+            string newPassword)
+        {
+            var connString = $"Server={master.Host},{master.Port};Database=master;User Id={master.AdminUsername};Password={master.AdminPassword};TrustServerCertificate=True;Encrypt=False;Connection Timeout=30";
+
+            await using var conn = new SqlConnection(connString);
+            await conn.OpenAsync();
+
+            await using var cmd = new SqlCommand(
+                $"ALTER LOGIN [{username}] WITH PASSWORD = '{newPassword}'", conn);
+            await cmd.ExecuteNonQueryAsync();
+
+            _logger.LogInformation($"✅ SQL Server password reset for {username}");
+        }
+
         private string BuildConnectionString(
             DatabaseEngine engine,
             int port,
@@ -782,6 +1114,9 @@ namespace CrudCloudDb.Infrastructure.Services
 
                 DatabaseEngine.MongoDB =>
                     $"mongodb://{credentials.Username}:{credentials.Password}@{host}:{port}/{dbName}?authSource={dbName}",
+
+                DatabaseEngine.SQLServer =>
+                    $"Server={host},{port};Database={dbName};User Id={credentials.Username};Password={credentials.Password};TrustServerCertificate=True;Encrypt=False",
 
                 _ => throw new NotSupportedException()
             };

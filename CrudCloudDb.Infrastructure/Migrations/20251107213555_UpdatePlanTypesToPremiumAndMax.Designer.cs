@@ -3,6 +3,7 @@ using System;
 using CrudCloudDb.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CrudCloudDb.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251107213555_UpdatePlanTypesToPremiumAndMax")]
+    partial class UpdatePlanTypesToPremiumAndMax
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -274,7 +277,7 @@ namespace CrudCloudDb.Infrastructure.Migrations
                         {
                             Id = new Guid("0b2a601a-1269-4818-9161-2797f54a7100"),
                             DatabaseLimitPerEngine = 5,
-                            Name = "Intermediate Plan",
+                            Name = "Premium Plan",
                             PlanType = 2,
                             Price = 5000.00m
                         },
@@ -282,7 +285,7 @@ namespace CrudCloudDb.Infrastructure.Migrations
                         {
                             Id = new Guid("7be9fe44-7454-4055-8a5f-eff194532a2e"),
                             DatabaseLimitPerEngine = 10,
-                            Name = "Advanced Plan",
+                            Name = "Max Plan",
                             PlanType = 3,
                             Price = 10000.00m
                         });
@@ -303,13 +306,9 @@ namespace CrudCloudDb.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("end_date");
 
-                    b.Property<string>("MercadoPagoOrderId")
+                    b.Property<string>("MercadoPagoSubscriptionId")
                         .HasColumnType("text")
-                        .HasColumnName("mercado_pago_order_id");
-
-                    b.Property<string>("MercadoPagoPaymentId")
-                        .HasColumnType("text")
-                        .HasColumnName("mercado_pago_payment_id");
+                        .HasColumnName("mercado_pago_subscription_id");
 
                     b.Property<Guid>("PlanId")
                         .HasColumnType("uuid")

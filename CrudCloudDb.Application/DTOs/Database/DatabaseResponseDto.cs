@@ -51,6 +51,11 @@
         public DateTime CreatedAt { get; set; }
 
         /// <summary>
+        /// Fecha de eliminación (soft delete - período de gracia de 30 días)
+        /// </summary>
+        public DateTime? DeletedAt { get; set; }
+
+        /// <summary>
         /// Indica si las credenciales ya fueron vistas
         /// </summary>
         public bool CredentialsViewed { get; set; }
