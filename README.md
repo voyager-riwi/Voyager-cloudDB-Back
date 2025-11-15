@@ -18,29 +18,30 @@
 
 ## 📖 Tabla de Contenidos
 
-- [¿Qué es PotterCloud?](#-qué-es-pottercloud)
-- [Problema que Resuelve](#-problema-que-resuelve)
-- [Características Principales](#-características-principales)
-- [Ventajas Competitivas](#-ventajas-competitivas)
-- [Seguridad](#-seguridad)
+- [¿Qué es PotterCloud?](#qué-es-pottercloud)
+- [Problema que Resuelve](#problema-que-resuelve)
+- [Características Principales](#características-principales)
+- [Ventajas Competitivas](#ventajas-competitivas)
+- [Seguridad](#seguridad)
 - [Arquitectura](#arquitectura)
 - [Stack Tecnológico](#stack-tecnológico)
 - [Requisitos Previos](#requisitos-previos)
 - [Instalación](#instalación)
 - [Configuración](#configuración)
-- [Despliegue](#-despliegue)
-- [API Endpoints](#-api-endpoints)
-- [Lógica de Negocio](#-lógica-de-negocio)
-- [Testing](#-testing)
-- [CI/CD](#-cicd)
-- [Monitoreo y Logs](#-monitoreo-y-logs)
-- [Contribución](#-contribución)
-- [Equipo](#-equipo)
-- [Licencia](#-licencia)
+- [Despliegue](#despliegue)
+- [API Endpoints](#api-endpoints)
+- [Lógica de Negocio](#lógica-de-negocio)
+- [Testing](#testing)
+- [CI/CD](#cicd)
+- [Monitoreo y Logs](#monitoreo-y-logs)
+- [Contribución](#contribución)
+- [Equipo](#equipo)
+- [Contacto](#contacto)
+- [Licencia](#licencia)
 
 ---
 
-## 🧙 ¿Qué es PotterCloud?
+## ¿Qué es PotterCloud?
 
 **PotterCloud** es una plataforma SaaS de última generación que democratiza el acceso a bases de datos en la nube. Inspirada en la magia y simplicidad de servicios como Clever Cloud, PotterCloud permite a desarrolladores, startups y empresas crear, gestionar y escalar instancias de bases de datos con un simple click.
 
@@ -52,7 +53,7 @@ Proporcionar una experiencia de gestión de bases de datos tan simple y mágica 
 
 ---
 
-## 🔥 Problema que Resuelve
+## Problema que Resuelve
 
 ### Desafíos Tradicionales
 
@@ -89,7 +90,7 @@ PotterCloud elimina todos estos puntos de fricción mediante:
 
 ---
 
-## ⚡ Características Principales
+## Características Principales
 
 ### 🎨 Gestión Multi-Motor
 
@@ -176,7 +177,7 @@ Soporte nativo para los motores de bases de datos más populares:
 
 ---
 
-## 🏆 Ventajas Competitivas
+## Ventajas Competitivas
 
 ### vs. Clever Cloud
 
@@ -208,7 +209,7 @@ Soporte nativo para los motores de bases de datos más populares:
 
 ---
 
-## 🔒 Seguridad
+## Seguridad
 
 ### Arquitectura de Seguridad por Capas
 
@@ -273,7 +274,7 @@ Soporte nativo para los motores de bases de datos más populares:
 
 ---
 
-## 🏗️ Arquitectura
+## Arquitectura
 
 ### Clean Architecture (Onion Architecture)
 
@@ -373,7 +374,7 @@ El proyecto sigue los principios de **Clean Architecture**, garantizando:
 
 ---
 
-## 🛠️ Stack Tecnológico
+## Stack Tecnológico
 
 ### Backend Core
 
@@ -427,7 +428,7 @@ Logs: Serilog (Console + File)
 
 ---
 
-## 📋 Requisitos Previos
+## Requisitos Previos
 
 ### Software Requerido
 
@@ -441,7 +442,7 @@ Logs: Serilog (Console + File)
 
 ---
 
-## 🚀 Instalación
+## Instalación
 
 ### Opción 1: Desarrollo Local (Sin Docker)
 
@@ -510,7 +511,7 @@ API disponible en: http://localhost:5191
 
 ---
 
-## ⚙️ Configuración
+## Configuración
 
 ### SSL (Let's Encrypt)
 
@@ -522,7 +523,7 @@ sudo certbot certonly --standalone -d voyager.andrescortes.dev
 
 ---
 
-## 🌐 Despliegue
+## Despliegue
 
 ### Producción con Docker
 
@@ -540,7 +541,7 @@ docker run -d \
 
 ---
 
-## 📡 API Endpoints
+## API Endpoints
 
 ### Autenticación
 
@@ -593,7 +594,7 @@ Verifica el estado de la API.
 
 ---
 
-## 💼 Lógica de Negocio
+## Lógica de Negocio
 
 ### Sistema de Planes y Cuotas
 
@@ -618,7 +619,7 @@ Cada base de datos en su propio contenedor aislado.
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ```bash
 dotnet test
@@ -627,7 +628,7 @@ dotnet test /p:CollectCoverage=true
 
 ---
 
-## 🔄 CI/CD
+## CI/CD
 
 GitHub Actions para:
 - ✅ Build automático
@@ -636,7 +637,7 @@ GitHub Actions para:
 
 ---
 
-## 📊 Monitoreo y Logs
+## Monitoreo y Logs
 
 ### Ver Logs
 
@@ -650,7 +651,7 @@ docker logs -f pottercloud-api
 
 ---
 
-## 🤝 Contribución
+## Contribución
 
 1. Fork el repositorio
 2. Crear rama: `git checkout -b feature/nueva-funcionalidad`
@@ -666,7 +667,7 @@ docker logs -f pottercloud-api
 
 ---
 
-## 👥 Equipo
+## Equipo
 
 Proyecto desarrollado por el equipo **Voyager** en RIWI:
 
@@ -677,7 +678,7 @@ Proyecto desarrollado por el equipo **Voyager** en RIWI:
 
 ---
 
-## 📞 Contacto
+## Contacto
 
 - **Frontend:** https://voyager.andrescortes.dev
 - **Backend API:** https://service.voyager.andrescortes.dev
@@ -685,7 +686,7 @@ Proyecto desarrollado por el equipo **Voyager** en RIWI:
 
 ---
 
-## 📄 Licencia
+## Licencia
 
 MIT License - Copyright (c) 2025 Voyager Team - RIWI
 
