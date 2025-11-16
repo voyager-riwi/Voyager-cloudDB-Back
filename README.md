@@ -30,6 +30,7 @@
 - [Instalación](#instalación)
 - [Configuración](#configuración)
 - [Despliegue](#despliegue)
+- [📚 Documentación de Migración](#documentación-de-migración)
 - [API Endpoints](#api-endpoints)
 - [Lógica de Negocio](#lógica-de-negocio)
 - [Testing](#testing)
@@ -539,6 +540,168 @@ docker run -d \
   -v /var/run/docker.sock:/var/run/docker.sock \
   pottercloud-backend:latest
 ```
+
+---
+
+## 📚 Documentación de Migración
+
+### 🚀 Guías de Despliegue Optimizado
+
+Esta documentación te guiará para migrar y desplegar el backend en un servidor con recursos limitados (4GB RAM) de forma segura y optimizada.
+
+#### 📖 Documentos Disponibles
+
+| Documento | Descripción | Tiempo Lectura |
+|-----------|-------------|----------------|
+| **[QUICK_START.md](./QUICK_START.md)** | Guía rápida para migración en 40 minutos | 10 min |
+| **[DOCUMENTATION_INDEX.md](./DOCUMENTATION_INDEX.md)** | Índice general de toda la documentación | 5 min |
+| **[MIGRATION_PLAN.md](./MIGRATION_PLAN.md)** | Plan estratégico completo de migración | 20 min |
+| **[DEPLOYMENT_TUTORIAL.md](./DEPLOYMENT_TUTORIAL.md)** | Tutorial paso a paso detallado | 30 min |
+| **[SECURITY_GUIDE.md](./SECURITY_GUIDE.md)** | Guía de seguridad y hardening | 15 min |
+
+#### 🛠️ Scripts Disponibles
+
+| Script | Descripción | Uso |
+|--------|-------------|-----|
+| **monitor.sh** | Monitoreo del sistema y contenedores | `./monitor.sh full` |
+| **backup.sh** | Backup automatizado de bases de datos | `./backup.sh` |
+| **verify-deployment.sh** | Verificación post-migración | `./verify-deployment.sh` |
+
+#### ⚡ Inicio Rápido
+
+Si tienes prisa, sigue estos pasos:
+
+```bash
+# 1. Lee la guía rápida
+cat QUICK_START.md
+
+# 2. Genera claves SSH (local)
+ssh-keygen -t ed25519 -C "github-actions" -f ~/.ssh/voyager-deploy/id_ed25519
+
+# 3. Configura el servidor
+ssh root@TU_IP_SERVIDOR
+curl -fsSL https://get.docker.com | sh
+fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+
+# 4. Configura GitHub Secrets (20 secrets)
+# Ver: DEPLOYMENT_TUTORIAL.md sección 3
+
+# 5. Primer deploy
+cd ~/Voyager-cloudDB-Back
+git clone -b deployment/docker-nginx https://github.com/TU_USUARIO/TU_REPO.git .
+docker compose -f docker-compose.databases.yml up -d
+docker build -t crudclouddb-api:latest .
+docker run -d --name crudclouddb_backend --network voyager_network -p 5191:5191 crudclouddb-api:latest
+
+# 6. Verificar
+./verify-deployment.sh
+```
+
+#### 📊 Distribución de Recursos (4GB RAM)
+
+```
+Sistema Operativo:  512 MB  (12.5%)
+NGINX:              128 MB  (3.1%)
+Backend API:        512 MB  (12.5%)
+PostgreSQL:         768 MB  (18.8%)
+MySQL:              768 MB  (18.8%)
+MongoDB:            512 MB  (12.5%)
+SQL Server:         896 MB  (21.8%)
+────────────────────────────────────
+TOTAL:             4096 MB  (100%)
+```
+
+#### 🔐 Checklist de Seguridad
+
+Antes de ir a producción, asegúrate de:
+
+- [ ] Swap de 2GB configurado
+- [ ] Firewall UFW activo (puertos 22, 80, 443)
+- [ ] SSH hardened (solo claves, sin root)
+- [ ] Fail2Ban instalado
+- [ ] 20 GitHub Secrets configurados
+- [ ] Passwords aleatorios (32+ caracteres)
+- [ ] Certificados SSL válidos
+- [ ] Backups automatizados (cron)
+- [ ] Límites de recursos en contenedores
+- [ ] Monitoreo activo
+
+#### 🎯 Arquitectura de Contenedores
+
+```
+┌─────────────────────────────────────────────────┐
+│  NGINX (Port 80/443)                            │
+│  └─> Reverse Proxy + SSL + Security Headers    │
+└──────────────┬──────────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────────┐
+│  Backend API (.NET 8) - Port 5191              │
+│  └─> Controllers, Services, Business Logic      │
+└──────────────┬──────────────────────────────────┘
+               │
+        ┌──────┴──────┐
+        │             │
+        ▼             ▼
+┌─────────────┐ ┌─────────────┐
+│ PostgreSQL  │ │   MySQL     │
+│ (Master)    │ │  (Master)   │
+│ Port 5432   │ │  Port 3306  │
+└─────────────┘ └─────────────┘
+        ▲             ▲
+        │             │
+        └──────┬──────┘
+               │
+        ┌──────┴──────┐
+        │             │
+        ▼             ▼
+┌─────────────┐ ┌─────────────┐
+│  MongoDB    │ │ SQL Server  │
+│  (Master)   │ │  (Master)   │
+│ Port 27017  │ │  Port 1433  │
+└─────────────┘ └─────────────┘
+```
+
+#### 🔄 Flujo de CI/CD
+
+```
+1. Push a deployment/docker-nginx
+   ↓
+2. GitHub Actions se activa
+   ↓
+3. Conecta vía SSH al servidor
+   ↓
+4. Pre-deployment checks (disco, memoria)
+   ↓
+5. Backup del contenedor actual
+   ↓
+6. Pull del código
+   ↓
+7. Inicia/verifica bases de datos
+   ↓
+8. Build de la imagen Docker
+   ↓
+9. Detiene contenedor anterior (graceful)
+   ↓
+10. Inicia nuevo contenedor
+   ↓
+11. Health checks (5 intentos)
+   ↓
+12. Recarga NGINX
+   ↓
+13. Verificación final
+   ↓
+14. Limpieza de imágenes antiguas
+   ↓
+15. ✅ Deploy exitoso
+```
+
+#### 📞 Soporte
+
+- 📄 **Documentación completa**: Ver carpeta raíz del proyecto
+- 🐛 **Issues**: GitHub Issues
+- 💬 **Discord**: Webhook configurado para alertas
+- 📧 **Email**: Configurado vía SMTP
 
 ---
 

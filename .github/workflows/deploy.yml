@@ -4,13 +4,29 @@ on:
   push:
     branches:
       - deployment/docker-nginx
+  workflow_dispatch:  # Permite deploy manual desde GitHub UI
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     name: Deploy Backend to service.voyager.andrescortes.dev
+    timeout-minutes: 15  # Timeout de seguridad
     
     steps:
+      # ==========================================
+      # Pre-deployment Checks
+      # ==========================================
+      - name: 📋 Deployment Info
+        run: |
+          echo "🚀 Starting deployment to Production"
+          echo "📅 Date: $(date)"
+          echo "🔖 Commit: ${{ github.sha }}"
+          echo "👤 Triggered by: ${{ github.actor }}"
+          echo "========================================="
+      
+      # ==========================================
+      # Main Deployment via SSH
+      # ==========================================
       - name: 🚀 Deploy via SSH
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -18,29 +34,134 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
+          timeout: 10m
+          command_timeout: 10m
           script: |
             echo "📦 Starting backend deployment..."
             echo "========================================="
             
             cd ~/Voyager-cloudDB-Back
             
+            # ==========================================
+            # PASO 1: Pre-deployment Checks
+            # ==========================================
+            echo "🔍 Running pre-deployment checks..."
+            
+            # Verificar espacio en disco (mínimo 2GB libre)
+            AVAILABLE_SPACE=$(df -BG . | tail -1 | awk '{print $4}' | sed 's/G//')
+            if [ "$AVAILABLE_SPACE" -lt 2 ]; then
+              echo "❌ ERROR: Insufficient disk space (${AVAILABLE_SPACE}GB available)"
+              exit 1
+            fi
+            echo "✅ Disk space OK: ${AVAILABLE_SPACE}GB available"
+            
+            # Verificar memoria disponible
+            FREE_MEM=$(free -m | awk 'NR==2 {print $7}')
+            if [ "$FREE_MEM" -lt 500 ]; then
+              echo "⚠️ WARNING: Low memory (${FREE_MEM}MB available)"
+            fi
+            echo "✅ Memory check: ${FREE_MEM}MB available"
+            
+            # ==========================================
+            # PASO 2: Backup del contenedor actual
+            # ==========================================
+            echo "💾 Creating backup of current backend..."
+            if docker ps -a | grep -q crudclouddb_backend; then
+              docker commit crudclouddb_backend crudclouddb-api:backup-$(date +%Y%m%d-%H%M%S) || true
+              echo "✅ Backup created"
+            else
+              echo "ℹ️  No existing container to backup"
+            fi
+            
+            # ==========================================
+            # PASO 3: Pull del código más reciente
+            # ==========================================
             echo "⬇️  Pulling latest code..."
             git fetch origin deployment/docker-nginx
             git reset --hard origin/deployment/docker-nginx
+            git clean -fd
+            echo "✅ Code updated"
             
-            echo "🛑 Stopping current containers..."
-            docker stop crudclouddb_backend || true
-            docker rm crudclouddb_backend || true
-            docker-compose down || true
+            # ==========================================
+            # PASO 4: Iniciar/Verificar Bases de Datos
+            # ==========================================
+            echo "🗄️  Checking database containers..."
             
+            # Verificar si el archivo compose de DBs existe
+            if [ -f "docker-compose.databases.yml" ]; then
+              # Iniciar bases de datos si no están corriendo
+              docker compose -f docker-compose.databases.yml up -d
+              
+              echo "⏳ Waiting for databases to be ready..."
+              sleep 15
+              
+              # Verificar salud de cada base de datos
+              for DB in postgres_master mysql_master mongodb_master sqlserver_master; do
+                if docker ps | grep -q $DB; then
+                  echo "✅ $DB is running"
+                else
+                  echo "⚠️ WARNING: $DB is not running"
+                fi
+              done
+            else
+              echo "ℹ️  No databases compose file found, skipping DB management"
+            fi
+            
+            # ==========================================
+            # PASO 5: Construcción de la imagen del backend
+            # ==========================================
             echo "🔨 Building Docker image..."
-            docker build -t crudclouddb-api:latest .
             
-            echo "▶️  Starting backend container..."
+            # Etiquetar imagen anterior como 'previous' para rollback
+            if docker images | grep -q "crudclouddb-api.*latest"; then
+              docker tag crudclouddb-api:latest crudclouddb-api:previous || true
+            fi
+            
+            # Build con cache para acelerar
+            docker build \
+              --tag crudclouddb-api:latest \
+              --tag crudclouddb-api:${{ github.sha }} \
+              --cache-from crudclouddb-api:latest \
+              --build-arg BUILDKIT_INLINE_CACHE=1 \
+              . || {
+                echo "❌ ERROR: Docker build failed"
+                exit 1
+              }
+            
+            echo "✅ Image built successfully"
+            
+            # ==========================================
+            # PASO 6: Detener contenedor actual (Graceful Shutdown)
+            # ==========================================
+            echo "🛑 Stopping current backend container..."
+            
+            if docker ps | grep -q crudclouddb_backend; then
+              # Dar 30 segundos para shutdown graceful
+              docker stop -t 30 crudclouddb_backend || true
+              docker rm crudclouddb_backend || true
+              echo "✅ Old container stopped and removed"
+            else
+              echo "ℹ️  No running container to stop"
+            fi
+            
+            # ==========================================
+            # PASO 7: Iniciar nuevo contenedor backend
+            # ==========================================
+            echo "▶️  Starting new backend container..."
             docker run -d \
               --name crudclouddb_backend \
               --restart unless-stopped \
-              --network host \
+              --network voyager_network \
+              --cpus="1.0" \
+              --memory="512m" \
+              --memory-swap="768m" \
+              --memory-reservation="256m" \
+              --health-cmd="curl -f http://localhost:5191/health || exit 1" \
+              --health-interval=30s \
+              --health-timeout=10s \
+              --health-retries=3 \
+              --health-start-period=40s \
+              -p 5191:5191 \
               -v /var/run/docker.sock:/var/run/docker.sock \
               -e ASPNETCORE_ENVIRONMENT=Production \
               -e ASPNETCORE_URLS=http://+:5191 \
@@ -68,43 +189,157 @@ jobs:
               -e MERCADOPAGO_PUBLIC_KEY=${{ secrets.MERCADOPAGO_PUBLIC_KEY }} \
               -e MERCADOPAGO_NOTIFICATION_URL=${{ secrets.MERCADOPAGO_NOTIFICATION_URL }} \
               -e MERCADOPAGO_WEBHOOK_SECRET=${{ secrets.MERCADOPAGO_WEBHOOK_SECRET }} \
-              crudclouddb-api:latest
+              crudclouddb-api:latest || {
+                echo "❌ ERROR: Failed to start backend container"
+                echo "📋 Attempting rollback..."
+                
+                # Rollback a imagen anterior
+                if docker images | grep -q "crudclouddb-api.*previous"; then
+                  docker run -d \
+                    --name crudclouddb_backend \
+                    --restart unless-stopped \
+                    --network voyager_network \
+                    -p 5191:5191 \
+                    -v /var/run/docker.sock:/var/run/docker.sock \
+                    $(docker inspect --format='{{range .Config.Env}}{{printf "-e %s " .}}{{end}}' crudclouddb_backend 2>/dev/null || echo "") \
+                    crudclouddb-api:previous
+                  
+                  echo "⚠️ Rollback completed to previous version"
+                fi
+                
+                exit 1
+              }
             
-            echo "⏳ Waiting for backend..."
-            sleep 5
+            echo "✅ Backend container started"
+            echo "✅ Backend container started"
             
-            if docker ps | grep -q crudclouddb_backend; then
-              echo "✅ Backend container running!"
+            # ==========================================
+            # PASO 8: Health Checks del Backend
+            # ==========================================
+            echo "🏥 Running health checks..."
             
-              echo "🏥 Testing backend endpoint..."
-              curl -f http://localhost:5191/health || echo "⚠️ Backend health check failed"
+            # Esperar 30 segundos para que el backend inicie completamente
+            echo "⏳ Waiting 30s for backend to be ready..."
+            sleep 30
             
-            else
-              echo "❌ Backend container failed!"
-              docker logs crudclouddb_backend
+            # Intentar health check 5 veces con intervalo de 10s
+            HEALTH_CHECK_ATTEMPTS=5
+            HEALTH_CHECK_PASSED=false
+            
+            for i in $(seq 1 $HEALTH_CHECK_ATTEMPTS); do
+              echo "Attempt $i/$HEALTH_CHECK_ATTEMPTS..."
+              
+              if docker exec crudclouddb_backend curl -f http://localhost:5191/health; then
+                echo "✅ Backend health check passed"
+                HEALTH_CHECK_PASSED=true
+                break
+              else
+                echo "⚠️ Health check failed, retrying in 10s..."
+                sleep 10
+              fi
+            done
+            
+            if [ "$HEALTH_CHECK_PASSED" = false ]; then
+              echo "❌ ERROR: Backend health check failed after $HEALTH_CHECK_ATTEMPTS attempts"
+              echo "📋 Backend logs:"
+              docker logs --tail 50 crudclouddb_backend
+              
+              # Intentar rollback
+              echo "🔄 Attempting rollback..."
+              docker stop crudclouddb_backend && docker rm crudclouddb_backend
+              
+              if docker images | grep -q "crudclouddb-api.*previous"; then
+                docker run -d --name crudclouddb_backend --restart unless-stopped --network voyager_network -p 5191:5191 crudclouddb-api:previous
+                echo "⚠️ Rolled back to previous version"
+              fi
+              
               exit 1
             fi
             
-            echo "🌐 Starting NGINX..."
-            docker-compose up -d
+            # ==========================================
+            # PASO 9: Iniciar/Reiniciar NGINX
+            # ==========================================
+            echo "🌐 Starting/Reloading NGINX..."
+            
+            # Verificar si NGINX está corriendo
+            if docker ps | grep -q voyager-backend-nginx; then
+              echo "♻️  Reloading NGINX configuration..."
+              docker exec voyager-backend-nginx nginx -s reload || {
+                echo "⚠️ NGINX reload failed, restarting container..."
+                docker-compose restart nginx
+              }
+            else
+              echo "▶️  Starting NGINX..."
+              docker-compose up -d nginx
+            fi
             
             echo "⏳ Waiting for NGINX..."
-            sleep 3
+            sleep 5
             
-            echo "🏥 Testing via NGINX (port 80)..."
-            curl -f http://localhost/health || echo "⚠️ NGINX health check failed"
+            # ==========================================
+            # PASO 10: Test Final vía NGINX
+            # ==========================================
+            echo "🧪 Testing via NGINX (port 80)..."
             
+            if curl -f http://localhost/health; then
+              echo "✅ NGINX health check passed"
+            else
+              echo "⚠️ WARNING: NGINX health check failed (may be due to SSL redirect)"
+              echo "ℹ️  Backend is running, NGINX may need SSL verification"
+            fi
+            
+            # ==========================================
+            # PASO 11: Limpieza
+            # ==========================================
             echo "🧹 Cleaning up old images..."
+            
+            # Eliminar imágenes sin tag y antiguas
             docker image prune -f
             
-            echo "📋 Recent backend logs:"
+            # Mantener solo las últimas 3 versiones
+            docker images | grep crudclouddb-api | awk '{print $3}' | tail -n +4 | xargs -r docker rmi -f || true
+            
+            # ==========================================
+            # PASO 12: Verificación Final
+            # ==========================================
+            echo "========================================="
+            echo "📊 Deployment Summary:"
+            echo "========================================="
+            
+            echo ""
+            echo "📋 Container Status:"
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "crudclouddb_backend|voyager-backend-nginx|postgres_master|mysql_master|mongodb_master|sqlserver_master"
+            
+            echo ""
+            echo "💾 Memory Usage:"
+            docker stats --no-stream --format "table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}"
+            
+            echo ""
+            echo "📋 Recent Backend Logs:"
             docker logs --tail 30 crudclouddb_backend
             
-            echo "📊 Container status:"
-            docker ps | grep -E "crudclouddb_backend|voyager-backend-nginx"
-            
+            echo ""
             echo "========================================="
             echo "✅ Deployment completed successfully!"
+            echo "========================================="
             echo "🌐 Backend API: https://service.voyager.andrescortes.dev"
             echo "📚 Swagger: https://service.voyager.andrescortes.dev/swagger"
             echo "🏥 Health: https://service.voyager.andrescortes.dev/health"
+            echo "========================================="
+      
+      # ==========================================
+      # Post-Deployment Notification
+      # ==========================================
+      - name: 📢 Notify Deployment Success
+        if: success()
+        run: |
+          echo "✅ Deployment successful!"
+          echo "Commit: ${{ github.sha }}"
+          echo "Deployed by: ${{ github.actor }}"
+      
+      - name: 📢 Notify Deployment Failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed!"
+          echo "Commit: ${{ github.sha }}"
+          echo "Check logs for details"
