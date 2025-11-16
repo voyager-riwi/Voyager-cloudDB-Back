@@ -107,27 +107,27 @@ Soporte nativo para los motores de bases de datos más populares:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  🆓 PLAN GRATUITO                                  │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━    │
-│  ✓ 2 bases de datos por motor                      │
-│  ✓ Gestión completa de credenciales                │
-│  ✓ Notificaciones por email                        │
-│  ✓ Soporte comunitario                             │
-│  ✓ Sin tarjeta de crédito                          │
-│                                                     │
-│  💎 PLAN INTERMEDIO - $5.000 COP/mes               │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━    │
-│  ✓ 5 bases de datos por motor                      │
-│  ✓ Webhooks personalizados                         │
-│  ✓ Soporte prioritario                             │
-│  ✓ Métricas avanzadas                              │
-│                                                    │
-│  🚀 PLAN AVANZADO - $10.000 COP/mes                │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━    │
-│  ✓ 10 bases de datos por motor                     │
-│  ✓ API con rate limits extendidos                  │
-│  ✓ Soporte 24/7                                    │
-│  ✓ Backups automáticos                             │
+│  🆓 PLAN GRATUITO                                       │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│  ✓ 2 bases de datos por motor                          │
+│  ✓ Gestión completa de credenciales                    │
+│  ✓ Notificaciones por email                            │
+│  ✓ Soporte comunitario                                 │
+│  ✓ Sin tarjeta de crédito                              │
+│                                                          │
+│  💎 PLAN INTERMEDIO - $5.000 COP/mes                    │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│  ✓ 5 bases de datos por motor                          │
+│  ✓ Webhooks personalizados                             │
+│  ✓ Soporte prioritario                                 │
+│  ✓ Métricas avanzadas                                  │
+│                                                          │
+│  🚀 PLAN AVANZADO - $10.000 COP/mes                     │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│  ✓ 10 bases de datos por motor                         │
+│  ✓ API con rate limits extendidos                      │
+│  ✓ Soporte 24/7                                        │
+│  ✓ Backups automáticos                                │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -214,27 +214,27 @@ Soporte nativo para los motores de bases de datos más populares:
 └─────────────────────────────────────────────────────┘
                        ↓
 ┌─────────────────────────────────────────────────────┐
-│  CAPA 2: APLICACIÓN                             │
-│  • Autenticación JWT (HS256)                    │
-│  • Middleware de autorización                   │
-│  • Rate limiting por endpoint                   │
-│  • CORS configurado restrictivamente            │
+│  CAPA 2: APLICACIÓN                                 │
+│  • Autenticación JWT (HS256)                        │
+│  • Middleware de autorización                       │
+│  • Rate limiting por endpoint                       │
+│  • CORS configurado restrictivamente                │
 └─────────────────────────────────────────────────────┘
                        ↓
 ┌─────────────────────────────────────────────────────┐
-│  CAPA 3: DATOS                                  │
-│  • Passwords hasheados (BCrypt)                 │
-│  • Secrets en variables de entorno              │
-│  • Credenciales rotables                        │
-│  • Backups encriptados                          │
+│  CAPA 3: DATOS                                      │
+│  • Passwords hasheados (BCrypt)                     │
+│  • Secrets en variables de entorno                  │
+│  • Credenciales rotables                            │
+│  • Backups encriptados                              │
 └─────────────────────────────────────────────────────┘
                        ↓
 ┌─────────────────────────────────────────────────────┐
-│  CAPA 4: AISLAMIENTO                            │
-│  • Contenedores Docker independientes           │
-│  • Redes virtuales segregadas                   │
-│  • Usuarios de BD con permisos mínimos          │
-│  • Sin acceso cross-tenant                      │
+│  CAPA 4: AISLAMIENTO                                │
+│  • Contenedores Docker independientes               │
+│  • Redes virtuales segregadas                       │
+│  • Usuarios de BD con permisos mínimos              │
+│  • Sin acceso cross-tenant                          │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -279,37 +279,37 @@ El proyecto sigue los principios de **Clean Architecture**, garantizando:
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│                    CrudCloudDb.API                   │
-│  (Controllers, Middleware, Configuration)            │
-│  • AuthController, DatabasesController               │
-│  • PaymentsController, WebhooksController            │
-│  • JWT Middleware, Error Handling                    │
+│                    CrudCloudDb.API                        │
+│  (Controllers, Middleware, Configuration)                 │
+│  • AuthController, DatabasesController                    │
+│  • PaymentsController, WebhooksController                 │
+│  • JWT Middleware, Error Handling                         │
 └─────────────────────┬─────────────────────────────────────┘
                       │ depends on
 ┌─────────────────────▼─────────────────────────────────────┐
-│              CrudCloudDb.Application                 │
-│  (Business Logic, Services, DTOs, Interfaces)        │
-│  • IAuthService, IDatabaseService                    │
-│  • IPaymentService, IEmailService                    │
-│  • DTOs for Auth, Database, Payment                  │
+│              CrudCloudDb.Application                      │
+│  (Business Logic, Services, DTOs, Interfaces)             │
+│  • IAuthService, IDatabaseService                         │
+│  • IPaymentService, IEmailService                         │
+│  • DTOs for Auth, Database, Payment                       │
 └─────────────────────┬─────────────────────────────────────┘
                       │ depends on
 ┌─────────────────────▼─────────────────────────────────────┐
-│               CrudCloudDb.Core                       │
-│  (Entities, Enums, Business Rules)                   │
-│  • User, DatabaseInstance, Plan                      │
-│  • Subscription, AuditLog, EmailLog                  │
-│  • DatabaseEngine, PlanType, Status                  │
+│               CrudCloudDb.Core                            │
+│  (Entities, Enums, Business Rules)                        │
+│  • User, DatabaseInstance, Plan                           │
+│  • Subscription, AuditLog, EmailLog                       │
+│  • DatabaseEngine, PlanType, Status                       │
 └───────────────────────────────────────────────────────────┘
                       ▲
                       │ implements
 ┌─────────────────────┴─────────────────────────────────────┐
-│            CrudCloudDb.Infrastructure                │
-│  (Data Access, External Services)                    │
-│  • ApplicationDbContext (EF Core)                    │
-│  • Repositories (User, Plan, Database)               │
-│  • DockerService, EmailService                       │
-│  • MasterContainerService                            │
+│            CrudCloudDb.Infrastructure                     │
+│  (Data Access, External Services)                         │
+│  • ApplicationDbContext (EF Core)                         │
+│  • Repositories (User, Plan, Database)                    │
+│  • DockerService, EmailService                            │
+│  • MasterContainerService                                 │
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -317,30 +317,30 @@ El proyecto sigue los principios de **Clean Architecture**, garantizando:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                         FRONTEND                       │
-│                    (Vue.js SPA)                        │
-│             voyager.andrescortes.dev                   │
+│                         FRONTEND                            │
+│                    (Vue.js SPA)                             │
+│             voyager.andrescortes.dev                        │
 └─────────────────────┬───────────────────────────────────────┘
                       │ HTTPS/REST
                       ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                         NGINX                          │
-│                  (Reverse Proxy + SSL)                 │
-│  • SSL Termination (Let's Encrypt)                     │
-│  • Load Balancing                                      │
-│  • Static Asset Caching                                │
+│                         NGINX                               │
+│                  (Reverse Proxy + SSL)                      │
+│  • SSL Termination (Let's Encrypt)                          │
+│  • Load Balancing                                           │
+│  • Static Asset Caching                                     │
 └─────────────────────┬───────────────────────────────────────┘
                       │
         ┌─────────────┴─────────────┐
         ▼                           ▼
 ┌──────────────────┐       ┌──────────────────┐
-│   Backend API   │       │   Frontend App │
-│   Port: 5191    │       │   Port: 3011   │
-│  ASP.NET Core   │       │     Vue.js     │
+│   Backend API    │       │   Frontend App   │
+│   Port: 5191     │       │   Port: 3011     │
+│  ASP.NET Core    │       │     Vue.js       │
 └────────┬─────────┘       └──────────────────┘
          │
          ├─────────────────┬─────────────────┬─────────────────┐
-         ▼               ▼                 ▼                 ▼
+         ▼                 ▼                 ▼                 ▼
 ┌─────────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
 │   PostgreSQL    │ │  Docker API  │ │ Mercado Pago │ │ SMTP Server  │
 │  (Main DB)      │ │ (Containers) │ │    (API)     │ │  (Email)     │
@@ -349,16 +349,16 @@ El proyecto sigue los principios de **Clean Architecture**, garantizando:
          │
          ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              USER DATABASE CONTAINERS                  │
+│              USER DATABASE CONTAINERS                       │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │  PostgreSQL │  │    MySQL    │  │   MongoDB   │      │
-│  │  User_1     │  │  User_1     │  │  User_1     │      │
-│  │  Port: 5433 │  │  Port: 3306 │  │  Port: 27017│      │
+│  │  PostgreSQL  │  │    MySQL     │  │   MongoDB    │      │
+│  │  User_1      │  │  User_1      │  │  User_1      │      │
+│  │  Port: 5433  │  │  Port: 3306  │  │  Port: 27017 │      │
 │  └──────────────┘  └──────────────┘  └──────────────┘      │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │  PostgreSQL  │  │    MySQL     │  │   MongoDB    │   │
-│  │  User_2      │  │  User_2      │  │  User_2      │   │
-│  │  Port: 5434  │  │  Port: 3307  │  │  Port: 27018 │   │
+│  │  PostgreSQL  │  │    MySQL     │  │   MongoDB    │      │
+│  │  User_2      │  │  User_2      │  │  User_2      │      │
+│  │  Port: 5434  │  │  Port: 3307  │  │  Port: 27018 │      │
 │  └──────────────┘  └──────────────┘  └──────────────┘      │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -1219,6 +1219,23 @@ Registro detallado de todas las operaciones con:
 
 ---
 
+## 🧪 Testing
+
+### Ejecutar Tests
+
+```bash
+# Todos los tests
+dotnet test
+
+# Tests de una categoría
+dotnet test --filter Category=Unit
+
+# Con cobertura
+dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
+```
+
+---
+
 ## 🔄 CI/CD
 
 El proyecto utiliza GitHub Actions para:
@@ -1257,16 +1274,60 @@ Errores críticos se notifican automáticamente vía webhook de Discord.
 
 ---
 
+## 🤝 Contribución
+
+### Cómo Contribuir
+
+1. **Fork** el repositorio
+2. **Crea** una rama para tu feature (`git checkout -b feature/AmazingFeature`)
+3. **Commit** tus cambios (`git commit -m 'Add some AmazingFeature'`)
+4. **Push** a la rama (`git push origin feature/AmazingFeature`)
+5. **Abre** un Pull Request
+
+### Estándares de Código
+
+- ✅ Seguir principios SOLID
+- ✅ Documentar métodos públicos con XML comments
+- ✅ Escribir tests para nuevas funcionalidades
+- ✅ Mantener cobertura de tests >80%
+- ✅ Usar nombres descriptivos en inglés
+- ✅ Seguir convenciones de C# y .NET
+
+### Checklist de PR
+
+- [ ] El código compila sin errores ni warnings
+- [ ] Todos los tests pasan
+- [ ] Se agregaron tests para nuevas funcionalidades
+- [ ] Se actualizó la documentación
+- [ ] Se siguieron los estándares de código
+- [ ] No hay credenciales hardcodeadas
+
+---
+
 ## 👥 Equipo
 
-Este proyecto fue desarrollado por el equipo **Voyager** como proyecto de practica de desarrollo fullstack en RIWI:
+Este proyecto fue desarrollado por el equipo **Voyager** como proyecto final del bootcamp de desarrollo web en RIWI:
 
 ### Desarrolladores
 
-- **Denis Sanchez** - Frontend Developer
-- **Miguel Arias** - Backend Developer & Authentication
-- **Brahiam Ruiz** - Backend Developer & Payments Integration
-- **Vanessa Gomez** - Backend Developer & Infrastructure
+- **Andrés Cortés** - Tech Lead & DevOps
+- **Miguel** - Backend Developer & Authentication
+- **Brahiam** - Backend Developer & Payments Integration
+- **María (Vanessa)** - Backend Developer & Infrastructure
+
+### Agradecimientos
+
+- **RIWI** por la formación y mentoría
+- **Clever Cloud** por la inspiración
+- **Comunidad .NET** por las herramientas y recursos
+
+---
+
+## 📄 Licencia
+
+Este proyecto es software educativo desarrollado como proyecto final. Se permite su uso con fines educativos y de demostración.
+
+---
 
 ## 📞 Contacto y Soporte
 
@@ -1277,6 +1338,9 @@ Este proyecto fue desarrollado por el equipo **Voyager** como proyecto de practi
 - **Documentación API:** https://service.voyager.andrescortes.dev/swagger
 - **GitHub:** https://github.com/voyager-riwi/Voyager-cloudDB-Back
 
+### Soporte
+
+Para reportar bugs o solicitar features, por favor abre un issue en GitHub.
 
 ---
 
