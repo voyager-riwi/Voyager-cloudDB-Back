@@ -114,31 +114,14 @@ Mem:           3.8Gi       1.2Gi       1.5Gi        10Mi       1.1Gi       2.4Gi
 Swap:          2.0Gi          0B       2.0Gi
 ```
 
-### Paso 2.5: Crear Usuario para Despliegues
+### Paso 2.5: Configurar SSH para Root
 
 ```bash
-# Crear usuario github-deployer
-sudo adduser --disabled-password --gecos "" github-deployer
-
-# Agregar al grupo docker
-sudo usermod -aG docker github-deployer
-
-# Verificar
-groups github-deployer
-# Debe mostrar: github-deployer : github-deployer docker
-```
-
-### Paso 2.6: Configurar SSH para github-deployer
-
-```bash
-# Cambiar a usuario github-deployer
-sudo su - github-deployer
-
-# Crear directorio .ssh
+# Crear directorio .ssh si no existe
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
 
-# Crear archivo authorized_keys
+# Crear o editar archivo authorized_keys
 nano ~/.ssh/authorized_keys
 ```
 
@@ -149,12 +132,9 @@ nano ~/.ssh/authorized_keys
 ```bash
 # Configurar permisos
 chmod 600 ~/.ssh/authorized_keys
-
-# Salir del usuario github-deployer
-exit
 ```
 
-### Paso 2.7: Configurar Firewall
+### Paso 2.6: Configurar Firewall
 
 ```bash
 # Configurar UFW
@@ -167,7 +147,7 @@ sudo ufw enable
 sudo ufw status numbered
 ```
 
-### Paso 2.8: Hardening SSH
+### Paso 2.7: Hardening SSH
 
 ```bash
 # Hacer backup de configuración original
@@ -179,10 +159,9 @@ sudo nano /etc/ssh/sshd_config
 
 **Agregar/modificar estas líneas:**
 ```
-PermitRootLogin no
+PermitRootLogin prohibit-password
 PasswordAuthentication no
 PubkeyAuthentication yes
-AllowUsers github-deployer tu_usuario_normal
 Protocol 2
 MaxAuthTries 3
 LoginGraceTime 30
@@ -198,23 +177,23 @@ sudo sshd -t
 sudo systemctl restart sshd
 ```
 
-### Paso 2.9: Probar Conexión SSH con Clave
+### Paso 2.8: Probar Conexión SSH con Clave
 
 **Desde tu máquina local (PowerShell):**
 
 ```powershell
 # Probar conexión (cambia NUEVA_IP_DEL_SERVIDOR)
-ssh -i "$HOME\.ssh\voyager-deploy\id_ed25519" github-deployer@NUEVA_IP_DEL_SERVIDOR
+ssh -i "$HOME\.ssh\voyager-deploy\id_ed25519" root@NUEVA_IP_DEL_SERVIDOR
 ```
 
 **✅ Deberías conectarte sin pedir contraseña.**
 
-Si funciona, continúa. Si no, revisa los pasos 2.6 y 2.8.
+Si funciona, continúa. Si no, revisa los pasos 2.5 y 2.7.
 
-### Paso 2.10: Crear Estructura de Directorios
+### Paso 2.9: Crear Estructura de Directorios
 
 ```bash
-# Ya conectado como github-deployer
+# Ya conectado como root
 cd ~
 mkdir -p Voyager-cloudDB-Back
 cd Voyager-cloudDB-Back
@@ -224,7 +203,7 @@ mkdir -p data/postgres data/mysql data/mongodb data/sqlserver
 mkdir -p logs ssl init-scripts/postgres init-scripts/mysql init-scripts/mongo init-scripts/sqlserver
 ```
 
-### Paso 2.11: Configurar Variables de Entorno de Bases de Datos
+### Paso 2.10: Configurar Variables de Entorno de Bases de Datos
 
 ```bash
 nano ~/Voyager-cloudDB-Back/.env.databases
@@ -269,7 +248,7 @@ Reemplaza `TU_PASSWORD_SEGURO_X` con los passwords generados.
 chmod 600 .env.databases
 ```
 
-### Paso 2.12: Copiar Certificados SSL
+### Paso 2.11: Copiar Certificados SSL
 
 Si ya tienes certificados SSL válidos:
 
@@ -284,8 +263,8 @@ cd ~/Voyager-cloudDB-Back/ssl
 **En tu máquina local:**
 ```powershell
 # Asumiendo que tienes los certificados localmente
-scp -i "$HOME\.ssh\voyager-deploy\id_ed25519" fullchain.pem github-deployer@NUEVA_IP_DEL_SERVIDOR:~/Voyager-cloudDB-Back/ssl/
-scp -i "$HOME\.ssh\voyager-deploy\id_ed25519" privkey.pem github-deployer@NUEVA_IP_DEL_SERVIDOR:~/Voyager-cloudDB-Back/ssl/
+scp -i "$HOME\.ssh\voyager-deploy\id_ed25519" fullchain.pem root@NUEVA_IP_DEL_SERVIDOR:~/Voyager-cloudDB-Back/ssl/
+scp -i "$HOME\.ssh\voyager-deploy\id_ed25519" privkey.pem root@NUEVA_IP_DEL_SERVIDOR:~/Voyager-cloudDB-Back/ssl/
 ```
 
 Si necesitas generar certificados con Let's Encrypt:
@@ -301,7 +280,6 @@ sudo cp /etc/letsencrypt/live/service.voyager.andrescortes.dev/fullchain.pem ~/V
 sudo cp /etc/letsencrypt/live/service.voyager.andrescortes.dev/privkey.pem ~/Voyager-cloudDB-Back/ssl/
 sudo cp /etc/letsencrypt/live/voyager.andrescortes.dev/fullchain.pem ~/Voyager-cloudDB-Back/ssl/voyager-fullchain.pem
 sudo cp /etc/letsencrypt/live/voyager.andrescortes.dev/privkey.pem ~/Voyager-cloudDB-Back/ssl/voyager-privkey.pem
-sudo chown github-deployer:github-deployer ~/Voyager-cloudDB-Back/ssl/*
 ```
 
 ---
@@ -324,7 +302,7 @@ Agrega cada uno de estos secrets:
 | Nombre | Valor |
 |--------|-------|
 | `SERVER_HOST` | La IP de tu nuevo servidor (ej: `123.45.67.89`) |
-| `SERVER_USER` | `github-deployer` |
+| `SERVER_USER` | `root` |
 | `SSH_PRIVATE_KEY` | Contenido COMPLETO de `id_ed25519` (incluye BEGIN y END) |
 
 #### Secrets de Base de Datos Principal:
@@ -457,14 +435,14 @@ git push origin deployment/docker-nginx
 ### Paso 5.1: Clonar Repositorio en el Servidor
 
 ```bash
-# Conectarse al servidor como github-deployer
-ssh -i "$HOME\.ssh\voyager-deploy\id_ed25519" github-deployer@NUEVA_IP_DEL_SERVIDOR
+# Conectarse al servidor como root
+ssh -i "$HOME\.ssh\voyager-deploy\id_ed25519" root@NUEVA_IP_DEL_SERVIDOR
 
 cd ~/Voyager-cloudDB-Back
 
 # Configurar Git
-git config --global user.name "GitHub Deployer"
-git config --global user.email "deployer@voyager.local"
+git config --global user.name "Root Deployer"
+git config --global user.email "root@voyager.local"
 
 # Clonar el repositorio
 git clone -b deployment/docker-nginx https://github.com/TU_USUARIO/TU_REPO.git tmp
@@ -628,7 +606,7 @@ Mientras se ejecuta, puedes ver qué pasa en el servidor:
 
 ```bash
 # Conectarse al servidor
-ssh -i "$HOME\.ssh\voyager-deploy\id_ed25519" github-deployer@NUEVA_IP_DEL_SERVIDOR
+ssh -i "$HOME\.ssh\voyager-deploy\id_ed25519" root@NUEVA_IP_DEL_SERVIDOR
 
 # Ver cambios en tiempo real
 watch -n 2 'docker ps --format "table {{.Names}}\t{{.Status}}"'
@@ -753,7 +731,7 @@ docker network inspect voyager_network | grep -A 20 "Containers"
 1. Verifica que todos los secrets estén configurados
 2. Verifica la conexión SSH desde GitHub:
    ```bash
-   ssh -i ~/.ssh/voyager-deploy/id_ed25519 github-deployer@SERVER_HOST "echo OK"
+   ssh -i ~/.ssh/voyager-deploy/id_ed25519 root@SERVER_HOST "echo OK"
    ```
 3. Revisa logs en GitHub Actions → Workflow → Ver detalles del paso fallido
 
@@ -762,12 +740,11 @@ docker network inspect voyager_network | grep -A 20 "Containers"
 ## ✅ Checklist Final
 
 - [ ] Swap de 2GB configurado y activo
-- [ ] Usuario `github-deployer` creado
-- [ ] Claves SSH funcionando
+- [ ] Claves SSH funcionando para usuario root
 - [ ] Firewall configurado (puertos 22, 80, 443)
 - [ ] Docker y Docker Compose instalados
 - [ ] 20 secrets configurados en GitHub
-- [ ] Certificados SSL en `/ssl/`
+- [ ] Certificados SSL en `~/Voyager-cloudDB-Back/ssl/`
 - [ ] Bases de datos iniciadas y saludables
 - [ ] Backend respondiendo en puerto 5191
 - [ ] NGINX funcionando y sirviendo tráfico HTTPS
