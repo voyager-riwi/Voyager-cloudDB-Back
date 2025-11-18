@@ -110,18 +110,26 @@ namespace CrudCloudDb.Infrastructure.Services
 
                 _logger.LogInformation($"🎉 Database {engine}/{databaseName} ready on port {masterContainer.Port}");
 
-                await _emailService.SendDatabaseCreatedEmailAsync(new DatabaseCreatedEmailDto
+                // Intentar enviar email (no crítico)
+                try
                 {
-                    UserEmail = user.Email,
-                    UserName = user.Email.Split('@')[0],
-                    DatabaseName = databaseName,
-                    Engine = engine.ToString(),
-                    Username = credentials.Username,
-                    Password = credentials.Password,
-                    Port = masterContainer.Port,
-                    ConnectionString = dbInstance.ConnectionString,
-                    CreatedAt = DateTime.UtcNow
-                });
+                    await _emailService.SendDatabaseCreatedEmailAsync(new DatabaseCreatedEmailDto
+                    {
+                        UserEmail = user.Email,
+                        UserName = user.Email.Split('@')[0],
+                        DatabaseName = databaseName,
+                        Engine = engine.ToString(),
+                        Username = credentials.Username,
+                        Password = credentials.Password,
+                        Port = masterContainer.Port,
+                        ConnectionString = dbInstance.ConnectionString,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+                catch (Exception emailEx)
+                {
+                    _logger.LogWarning(emailEx, "⚠️ No se pudo enviar el email de creación de base de datos (no crítico)");
+                }
 
                 return dbInstance;
             }
