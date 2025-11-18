@@ -16,6 +16,20 @@
 
 ---
 
+## 🚀 Inicio Rápido
+
+¿Necesitas desplegar el backend? Aquí tienes accesos rápidos:
+
+| Documento | Descripción | Para quién |
+|-----------|-------------|------------|
+| 📘 **[GUIA_DESPLIEGUE_MANUAL.md](./GUIA_DESPLIEGUE_MANUAL.md)** | Guía completa paso a paso | DevOps / Backend |
+| 📋 **[RESUMEN_DESPLIEGUE.md](./RESUMEN_DESPLIEGUE.md)** | Resumen ejecutivo de cambios | Product Managers |
+| 🔧 **[deploy-production.sh](./deploy-production.sh)** | Script de despliegue automatizado | DevOps |
+
+**¿Primera vez desplegando?** → Lee [GUIA_DESPLIEGUE_MANUAL.md](./GUIA_DESPLIEGUE_MANUAL.md)
+
+---
+
 ## 📖 Tabla de Contenidos
 
 - [¿Qué es PotterCloud?](#-qué-es-pottercloud)

@@ -7,7 +7,7 @@ version: '3.8'
 
 services:
   # ==========================================
-  # PostgreSQL Master - 768MB
+  # PostgreSQL Master - 512MB (REDUCIDO)
   # ==========================================
   postgres_master:
     image: postgres:15-alpine  # Alpine = imagen más ligera
@@ -18,11 +18,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.75'
-          memory: 768M
+          cpus: '0.5'
+          memory: 512M
         reservations:
           cpus: '0.25'
-          memory: 384M
+          memory: 256M
     
     # 🌐 Red
     networks:
@@ -41,20 +41,20 @@ services:
       # Optimizaciones de memoria
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
     
-    # ⚙️ Configuración optimizada
+    # ⚙️ Configuración optimizada (REDUCIDO)
     command: >
       postgres
-      -c shared_buffers=256MB
-      -c effective_cache_size=512MB
-      -c maintenance_work_mem=64MB
+      -c shared_buffers=128MB
+      -c effective_cache_size=384MB
+      -c maintenance_work_mem=32MB
       -c checkpoint_completion_target=0.9
-      -c wal_buffers=16MB
+      -c wal_buffers=8MB
       -c default_statistics_target=100
       -c random_page_cost=1.1
       -c effective_io_concurrency=200
       -c work_mem=4MB
-      -c min_wal_size=1GB
-      -c max_wal_size=4GB
+      -c min_wal_size=512MB
+      -c max_wal_size=2GB
       -c max_connections=50
       -c max_worker_processes=2
       -c max_parallel_workers_per_gather=1
@@ -85,21 +85,20 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.75'
-          memory: 768M
+          cpus: '0.5'
+          memory: 512M
         reservations:
           cpus: '0.25'
-          memory: 384M
+          memory: 256M
     
     # 🌐 Red
     networks:
       - voyager_network
     
-    # 📦 Volúmenes
+    # 📦 Volúmenes (SIN my.cnf corrupto)
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init-scripts/mysql:/docker-entrypoint-initdb.d:ro
-      - ./mysql-config/my.cnf:/etc/mysql/conf.d/my.cnf:ro
     
     # 🔧 Variables de entorno
     environment:
@@ -110,22 +109,18 @@ services:
       # Optimizaciones
       MYSQL_INITDB_SKIP_TZINFO: 1
     
-    # ⚙️ Configuración optimizada (ver my.cnf)
+    # ⚙️ Configuración optimizada (SIN parámetros deprecated)
     command: >
       --default-authentication-plugin=mysql_native_password
       --max-connections=50
-      --innodb-buffer-pool-size=256M
+      --innodb-buffer-pool-size=192M
       --innodb-log-file-size=64M
       --innodb-flush-log-at-trx-commit=2
-      --innodb-flush-method=O_DIRECT
-      --query-cache-type=0
-      --query-cache-size=0
       --table-open-cache=400
       --tmp-table-size=32M
       --max-heap-table-size=32M
       --performance-schema=OFF
       --slow-query-log=1
-      --slow-query-log-file=/var/lib/mysql/slow.log
       --long-query-time=2
     
     # 🏥 Health check
@@ -141,7 +136,7 @@ services:
       - "3306:3306"
 
   # ==========================================
-  # MongoDB Master - 512MB
+  # MongoDB Master - 384MB (REDUCIDO)
   # ==========================================
   mongodb_master:
     image: mongo:7.0
@@ -151,6 +146,12 @@ services:
     # 🔒 Límites de recursos
     deploy:
       resources:
+        limits:
+          cpus: '0.5'
+          memory: 384M
+        reservations:
+          cpus: '0.25'
+          memory: 192M
         limits:
           cpus: '0.5'
           memory: 512M
@@ -174,11 +175,11 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
       MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-voyager_main}
     
-    # ⚙️ Configuración optimizada
+    # ⚙️ Configuración optimizada (REDUCIDO)
     command: >
       mongod
-      --wiredTigerCacheSizeGB 0.25
-      --wiredTigerMaxCacheOverflowFileSizeGB 0.1
+      --wiredTigerCacheSizeGB 0.15
+      --wiredTigerMaxCacheOverflowFileSizeGB 0.05
       --maxConns 50
       --auth
       --bind_ip_all
@@ -198,7 +199,7 @@ services:
       - "27017:27017"
 
   # ==========================================
-  # SQL Server Master - 896MB (mínimo requerido)
+  # SQL Server Master - 768MB (REDUCIDO)
   # ==========================================
   sqlserver_master:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -208,6 +209,12 @@ services:
     # 🔒 Límites de recursos (SQL Server es el más pesado)
     deploy:
       resources:
+        limits:
+          cpus: '0.8'
+          memory: 768M
+        reservations:
+          cpus: '0.5'
+          memory: 512M
         limits:
           cpus: '1.0'
           memory: 896M
@@ -230,7 +237,7 @@ services:
       SA_PASSWORD: ${SA_PASSWORD}
       MSSQL_PID: "Express"  # Edición Express (gratuita)
       # Optimizaciones de memoria
-      MSSQL_MEMORY_LIMIT_MB: 896
+      MSSQL_MEMORY_LIMIT_MB: 768
       MSSQL_AGENT_ENABLED: "false"  # Desactivar SQL Agent para ahorrar RAM
     
     # ⚙️ Configuración optimizada
