@@ -152,12 +152,6 @@ services:
         reservations:
           cpus: '0.25'
           memory: 192M
-        limits:
-          cpus: '0.5'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
     
     # 🌐 Red
     networks:
