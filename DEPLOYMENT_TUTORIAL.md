@@ -203,9 +203,75 @@ mkdir -p data/postgres data/mysql data/mongodb data/sqlserver
 mkdir -p logs ssl init-scripts/postgres init-scripts/mysql init-scripts/mongo init-scripts/sqlserver
 ```
 
-### Paso 2.10: Configurar Variables de Entorno de Bases de Datos
+### Paso 2.10: Verificar y Crear Base de Datos PostgreSQL
+
+Si ya tienes el contenedor de PostgreSQL levantado pero la base de datos `crud_cloud_db` no existe, créala:
 
 ```bash
+# En el servidor, conectado como root
+# Verificar que el contenedor de Postgres esté corriendo
+docker ps | grep postgres_master
+
+# Crear la base de datos crud_cloud_db
+docker exec -it postgres_master psql -U postgres -c "CREATE DATABASE crud_cloud_db;"
+
+# Verificar que se creó
+docker exec -it postgres_master psql -U postgres -c "\l" | grep crud_cloud_db
+
+# Verificar conexión
+docker exec -it postgres_master psql -U postgres -d crud_cloud_db -c "SELECT version();"
+```
+
+**Notas importantes:**
+- Las **migraciones de EF Core se aplicarán automáticamente** al iniciar el backend (ya está configurado en `Program.cs`)
+- No necesitas crear tablas manualmente
+- El backend creará: `users`, `plans`, `subscriptions`, `database_instances`, `audit_logs`, `email_logs`, `webhook_configs`
+
+### Paso 2.11: Configurar Variables de Entorno de Bases de Datos
+
+```bash
+# En el servidor
+cd ~/Voyager-cloudDB-Back
+
+# Crear archivo .env.databases
+nano .env.databases
+```
+
+**Pega este contenido (ajusta las contraseñas según tu configuración del paso anterior):**
+
+```bash
+# PostgreSQL Master
+POSTGRES_USER=admin_pg
+POSTGRES_PASSWORD=TU_PASSWORD_SEGURA_POSTGRES
+POSTGRES_DB=voyager_main
+
+# MySQL Master
+MYSQL_ROOT_PASSWORD=TU_PASSWORD_SEGURA_MYSQL_ROOT
+MYSQL_DATABASE=voyager_main
+MYSQL_USER=admin_mysql
+MYSQL_PASSWORD=TU_PASSWORD_SEGURA_MYSQL
+
+# MongoDB Master
+MONGO_INITDB_ROOT_USERNAME=admin_mongo
+MONGO_INITDB_ROOT_PASSWORD=TU_PASSWORD_SEGURA_MONGO
+MONGO_INITDB_DATABASE=voyager_main
+
+# SQL Server Master
+SA_PASSWORD=TU_PASSWORD_SEGURA_SQLSERVER
+```
+
+```bash
+# Guardar: Ctrl+X, Y, Enter
+
+# Proteger el archivo
+chmod 600 .env.databases
+
+# Verificar
+ls -l .env.databases
+# Debe mostrar: -rw------- 1 root root
+```
+
+### Paso 2.12: Copiar Certificados SSL
 nano ~/Voyager-cloudDB-Back/.env.databases
 ```
 

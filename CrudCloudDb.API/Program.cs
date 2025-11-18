@@ -302,7 +302,7 @@ try
     var app = builder.Build();
 
     // =======================
-    // 🌱 Database Initialization & Seeding
+    // 🗄️ Database Migration & Seeding
     // =======================
     using (var scope = app.Services.CreateScope())
     {
@@ -311,6 +311,26 @@ try
         {
             var dbContext = services.GetRequiredService<ApplicationDbContext>();
             var logger = services.GetRequiredService<ILogger<Program>>();
+
+            logger.LogInformation("🗄️ Checking database migrations...");
+            
+            // ✅ Aplicar migraciones pendientes automáticamente
+            var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
+            if (pendingMigrations.Any())
+            {
+                logger.LogInformation($"📦 Applying {pendingMigrations.Count()} pending migration(s)...");
+                foreach (var migration in pendingMigrations)
+                {
+                    logger.LogInformation($"   - {migration}");
+                }
+                
+                await dbContext.Database.MigrateAsync();
+                logger.LogInformation("✅ Database migrations applied successfully");
+            }
+            else
+            {
+                logger.LogInformation("ℹ️ Database is up to date (no pending migrations)");
+            }
 
             logger.LogInformation("🌱 Initializing database data...");
 
