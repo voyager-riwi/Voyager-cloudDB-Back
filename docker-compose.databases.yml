@@ -1,0 +1,288 @@
+﻿# ==========================================
+# Docker Compose - Bases de Datos Master
+# Optimizado para servidor con 4GB RAM
+# ==========================================
+
+version: '3.8'
+
+services:
+  # ==========================================
+  # PostgreSQL Master - 512MB (REDUCIDO)
+  # ==========================================
+  postgres_master:
+    image: postgres:15-alpine  # Alpine = imagen más ligera
+    container_name: postgres_master
+    restart: unless-stopped
+    
+    # 🔒 Límites de recursos
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    
+    # 🌐 Red
+    networks:
+      - voyager_network
+    
+    # 📦 Volúmenes
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts/postgres:/docker-entrypoint-initdb.d:ro
+    
+    # 🔧 Variables de entorno
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin_pg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-voyager_main}
+      # Optimizaciones de memoria
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+    
+    # ⚙️ Configuración optimizada (REDUCIDO)
+    command: >
+      postgres
+      -c shared_buffers=128MB
+      -c effective_cache_size=384MB
+      -c maintenance_work_mem=32MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=8MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=4MB
+      -c min_wal_size=512MB
+      -c max_wal_size=2GB
+      -c max_connections=50
+      -c max_worker_processes=2
+      -c max_parallel_workers_per_gather=1
+      -c max_parallel_workers=2
+      -c log_min_duration_statement=1000
+    
+    # 🏥 Health check
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin_pg}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    
+    # 🔌 Puertos
+    ports:
+      - "5432:5432"
+
+  # ==========================================
+  # MySQL Master - 768MB
+  # ==========================================
+  mysql_master:
+    image: mysql:8.0
+    container_name: mysql_master
+    restart: unless-stopped
+    
+    # 🔒 Límites de recursos
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    
+    # 🌐 Red
+    networks:
+      - voyager_network
+    
+    # 📦 Volúmenes (SIN my.cnf corrupto)
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init-scripts/mysql:/docker-entrypoint-initdb.d:ro
+    
+    # 🔧 Variables de entorno
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-voyager_main}
+      MYSQL_USER: ${MYSQL_USER:-admin_mysql}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      # Optimizaciones
+      MYSQL_INITDB_SKIP_TZINFO: 1
+    
+    # ⚙️ Configuración optimizada (SIN parámetros deprecated)
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=50
+      --innodb-buffer-pool-size=192M
+      --innodb-log-file-size=64M
+      --innodb-flush-log-at-trx-commit=2
+      --table-open-cache=400
+      --tmp-table-size=32M
+      --max-heap-table-size=32M
+      --performance-schema=OFF
+      --slow-query-log=1
+      --long-query-time=2
+    
+    # 🏥 Health check
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    
+    # 🔌 Puertos
+    ports:
+      - "3306:3306"
+
+  # ==========================================
+  # MongoDB Master - 384MB (REDUCIDO)
+  # ==========================================
+  mongodb_master:
+    image: mongo:7.0
+    container_name: mongodb_master
+    restart: unless-stopped
+    
+    # 🔒 Límites de recursos
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 384M
+        reservations:
+          cpus: '0.25'
+          memory: 192M
+    
+    # 🌐 Red
+    networks:
+      - voyager_network
+    
+    # 📦 Volúmenes
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+      - ./init-scripts/mongo:/docker-entrypoint-initdb.d:ro
+    
+    # 🔧 Variables de entorno
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin_mongo}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-voyager_main}
+    
+    # ⚙️ Configuración optimizada (REDUCIDO)
+    command: >
+      mongod
+      --wiredTigerCacheSizeGB 0.15
+      --wiredTigerMaxCacheOverflowFileSizeGB 0.05
+      --maxConns 50
+      --auth
+      --bind_ip_all
+      --slowms 1000
+      --profile 1
+    
+    # 🏥 Health check
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    
+    # 🔌 Puertos
+    ports:
+      - "27017:27017"
+
+  # ==========================================
+  # SQL Server Master - 768MB (REDUCIDO)
+  # ==========================================
+  sqlserver_master:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqlserver_master
+    restart: unless-stopped
+    
+    # 🔒 Límites de recursos (SQL Server es el más pesado)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.8'
+          memory: 768M
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+        limits:
+          cpus: '1.0'
+          memory: 896M
+        reservations:
+          cpus: '0.5'
+          memory: 896M  # SQL Server requiere mínimo este valor
+    
+    # 🌐 Red
+    networks:
+      - voyager_network
+    
+    # 📦 Volúmenes
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+      - ./init-scripts/sqlserver:/docker-entrypoint-initdb.d:ro
+    
+    # 🔧 Variables de entorno
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: ${SA_PASSWORD}
+      MSSQL_PID: "Express"  # Edición Express (gratuita)
+      # Optimizaciones de memoria
+      MSSQL_MEMORY_LIMIT_MB: 768
+      MSSQL_AGENT_ENABLED: "false"  # Desactivar SQL Agent para ahorrar RAM
+    
+    # ⚙️ Configuración optimizada
+    command: >
+      /opt/mssql/bin/sqlservr
+    
+    # 🏥 Health check
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P ${SA_PASSWORD} -Q 'SELECT 1' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s  # SQL Server tarda más en iniciar
+    
+    # 🔌 Puertos
+    ports:
+      - "1433:1433"
+
+# ==========================================
+# Volúmenes Persistentes
+# ==========================================
+volumes:
+  postgres_data:
+    driver: local
+    name: voyager_postgres_data
+  
+  mysql_data:
+    driver: local
+    name: voyager_mysql_data
+  
+  mongodb_data:
+    driver: local
+    name: voyager_mongodb_data
+  
+  mongodb_config:
+    driver: local
+    name: voyager_mongodb_config
+  
+  sqlserver_data:
+    driver: local
+    name: voyager_sqlserver_data
+
+# ==========================================
+# Red Personalizada
+# ==========================================
+networks:
+  voyager_network:
+    driver: bridge
+    name: voyager_network
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
+

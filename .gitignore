@@ -49,6 +49,68 @@ bld/
 # Entity Framework Migrations (OPCIONAL: si no quieres subir migraciones)
 # **/Migrations/
 
+# ==========================================
+# Docker & Environment Variables
+# ==========================================
+.env
+.env.local
+.env.databases
+.env.production
+.env.development
+*.env
+
+# Docker volumes data
+data/
+logs/
+backups/
+
+# ==========================================
+# SSL Certificates & Keys
+# ==========================================
+ssl/
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+*.cer
+
+# ==========================================
+# Sensitive Configuration Files
+# ==========================================
+appsettings.Development.json
+appsettings.Production.json
+**/appsettings.*.json
+!**/appsettings.json
+
+# SSH Keys (por si acaso)
+*.pub
+id_rsa*
+id_ed25519*
+id_ecdsa*
+
+# ==========================================
+# Database Backups
+# ==========================================
+*.sql
+*.sql.gz
+*.dump
+*.bak
+
+# ==========================================
+# Temporary & Cache Files
+# ==========================================
+*.tmp
+*.temp
+*.cache
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# Monitor Script Outputs
+# ==========================================
+monitor_output.txt
+status_report.txt
 # ⭐ ARCHIVOS DE CONFIGURACIÓN CON CREDENCIALES
 appsettings.Development.json
 appsettings.Local.json

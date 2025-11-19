@@ -5,6 +5,8 @@ using CrudCloudDb.Application.Services.Interfaces;
 using CrudCloudDb.Core.Entities;
 using MercadoPago.Client.Preference;
 using MercadoPago.Resource.Preference;
+using System;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -16,15 +18,20 @@ public class PaymentService : IPaymentService
     private readonly IUserRepository _userRepository;
     private readonly IPlanRepository _planRepository;
     private readonly ILogger<PaymentService> _logger;
+    private readonly string _notificationUrl;
 
     public PaymentService(
         IUserRepository userRepository,
         IPlanRepository planRepository,
-        ILogger<PaymentService> logger)
+        ILogger<PaymentService> logger,
+        IConfiguration configuration)
     {
         _userRepository = userRepository;
         _planRepository = planRepository;
         _logger = logger;
+        _notificationUrl = configuration["MercadoPagoSettings:NotificationUrl"]
+                           ?? Environment.GetEnvironmentVariable("MERCADOPAGO_NOTIFICATION_URL")
+                           ?? "https://service.voyager.andrescortes.dev/api/Webhooks/mercadopago";
     }
 
     public async Task<ApiResponse<CreatePreferenceResponseDto>> CreateSubscriptionPreferenceAsync(Guid userId, CreatePreferenceRequestDto request)
@@ -73,6 +80,7 @@ public class PaymentService : IPaymentService
                     Pending = "https://voyager.andrescortes.dev/payment-pending",
                 },
                 AutoReturn = "approved",
+                NotificationUrl = _notificationUrl,
                 ExternalReference = $"user:{userId};plan:{plan.Id}",
             };
 
