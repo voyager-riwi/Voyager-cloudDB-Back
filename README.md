@@ -1,4 +1,8 @@
+﻿<<<<<<< Updated upstream
 # 🧙‍♂️ PotterCloud - Backend API
+=======
+﻿# 🧙‍♂️ PotterCloud - Backend API
+>>>>>>> Stashed changes
 
 <div align="center">
 
@@ -37,11 +41,11 @@
 - [Características Principales](#-características-principales)
 - [Ventajas Competitivas](#-ventajas-competitivas)
 - [Seguridad](#-seguridad)
-- [Arquitectura](#-arquitectura)
-- [Stack Tecnológico](#-stack-tecnológico)
+- [Arquitectura](#%EF%B8%8F-arquitectura)
+- [Stack Tecnológico](#%EF%B8%8F-stack-tecnológico)
 - [Requisitos Previos](#-requisitos-previos)
 - [Instalación](#-instalación)
-- [Configuración](#-configuración)
+- [Configuración](#%EF%B8%8F-configuración)
 - [Despliegue](#-despliegue)
 - [API Endpoints](#-api-endpoints)
 - [Lógica de Negocio](#-lógica-de-negocio)
@@ -50,6 +54,7 @@
 - [Monitoreo y Logs](#-monitoreo-y-logs)
 - [Contribución](#-contribución)
 - [Equipo](#-equipo)
+- [Diagramas](#-diagramas)
 - [Licencia](#-licencia)
 
 ---
@@ -1327,13 +1332,27 @@ Este proyecto fue desarrollado por el equipo **Voyager** como proyecto final del
 - **Andrés Cortés** - Tech Lead & DevOps
 - **Miguel** - Backend Developer & Authentication
 - **Brahiam** - Backend Developer & Payments Integration
-- **María (Vanessa)** - Backend Developer & Infrastructure
+- **Vanessa** - Backend Developer & Infrastructure
 
 ### Agradecimientos
 
 - **RIWI** por la formación y mentoría
 - **Clever Cloud** por la inspiración
 - **Comunidad .NET** por las herramientas y recursos
+
+---
+
+## 📊 Diagramas
+
+### Casos de Uso
+Visualiza todos los casos de uso del sistema organizados por módulos funcionales:
+- **[Diagrama de Casos de Uso](https://drive.google.com/file/d/1I3EXjk6hH1IEkvMZj81HPc-8Xj7RZtF4/view?usp=drive_link)**
+
+### Diagrama de Clases
+Explora la arquitectura completa del sistema con todas las entidades, servicios y relaciones:
+- **[Diagrama de Clases](https://drive.google.com/file/d/1nZDh1Ft-oZjAmSf4CgdqU1SIJqoKLvt0/view?usp=drive_link)**
+
+Estos diagramas complementan la documentación de arquitectura disponible en [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ---
 
