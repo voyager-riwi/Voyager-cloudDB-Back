@@ -1,0 +1,110 @@
+name: 🚀 Deploy Backend to Production
+
+on:
+  push:
+    branches:
+      - deployment/docker-nginx
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy Backend to service.voyager.andrescortes.dev
+    
+    steps:
+      - name: 🚀 Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            echo "📦 Starting backend deployment..."
+            echo "========================================="
+            
+            cd ~/Voyager-cloudDB-Back
+            
+            echo "⬇️  Pulling latest code..."
+            git fetch origin deployment/docker-nginx
+            git reset --hard origin/deployment/docker-nginx
+            
+            echo "🛑 Stopping current containers..."
+            docker stop crudclouddb_backend || true
+            docker rm crudclouddb_backend || true
+            docker-compose down || true
+            
+            echo "🔨 Building Docker image..."
+            docker build -t crudclouddb-api:latest .
+            
+            echo "▶️  Starting backend container..."
+            docker run -d \
+              --name crudclouddb_backend \
+              --restart unless-stopped \
+              --network host \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -e ASPNETCORE_ENVIRONMENT=Production \
+              -e ASPNETCORE_URLS=http://+:5191 \
+              -e DB_HOST=${{ secrets.DB_HOST }} \
+              -e DB_PORT=${{ secrets.DB_PORT }} \
+              -e DB_NAME=${{ secrets.DB_NAME }} \
+              -e DB_USER=${{ secrets.DB_USER }} \
+              -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              -e JWT_SECRET=${{ secrets.JWT_SECRET }} \
+              -e JWT_ISSUER=CrudCloudDb.API \
+              -e JWT_AUDIENCE=CrudCloudDb.Frontend \
+              -e SMTP_SERVER=smtp.gmail.com \
+              -e SMTP_PORT=587 \
+              -e SMTP_SENDER_EMAIL=${{ secrets.SMTP_SENDER_EMAIL }} \
+              -e SMTP_SENDER_NAME=PotterCloud \
+              -e SMTP_USERNAME=${{ secrets.SMTP_USERNAME }} \
+              -e SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }} \
+              -e SMTP_ENABLE_SSL=true \
+              -e DB_HOST_POSTGRESQL=${{ secrets.DB_HOST_POSTGRESQL }} \
+              -e DB_HOST_MYSQL=${{ secrets.DB_HOST_MYSQL }} \
+              -e DB_HOST_MONGODB=${{ secrets.DB_HOST_MONGODB }} \
+              -e DB_HOST_SQLSERVER=${{ secrets.DB_HOST_SQLSERVER }} \
+              -e DISCORD_WEBHOOK_URL=${{ secrets.DISCORD_WEBHOOK_URL }} \
+              -e MERCADOPAGO_ACCESS_TOKEN=${{ secrets.MERCADOPAGO_ACCESS_TOKEN }} \
+              -e MERCADOPAGO_PUBLIC_KEY=${{ secrets.MERCADOPAGO_PUBLIC_KEY }} \
+              -e MERCADOPAGO_NOTIFICATION_URL=${{ secrets.MERCADOPAGO_NOTIFICATION_URL }} \
+              -e MERCADOPAGO_WEBHOOK_SECRET=${{ secrets.MERCADOPAGO_WEBHOOK_SECRET }} \
+              crudclouddb-api:latest
+            
+            echo "⏳ Waiting for backend..."
+            sleep 5
+            
+            if docker ps | grep -q crudclouddb_backend; then
+              echo "✅ Backend container running!"
+            
+              echo "🏥 Testing backend endpoint..."
+              curl -f http://localhost:5191/health || echo "⚠️ Backend health check failed"
+            
+            else
+              echo "❌ Backend container failed!"
+              docker logs crudclouddb_backend
+              exit 1
+            fi
+            
+            echo "🌐 Starting NGINX..."
+            docker-compose up -d
+            
+            echo "⏳ Waiting for NGINX..."
+            sleep 3
+            
+            echo "🏥 Testing via NGINX (port 80)..."
+            curl -f http://localhost/health || echo "⚠️ NGINX health check failed"
+            
+            echo "🧹 Cleaning up old images..."
+            docker image prune -f
+            
+            echo "📋 Recent backend logs:"
+            docker logs --tail 30 crudclouddb_backend
+            
+            echo "📊 Container status:"
+            docker ps | grep -E "crudclouddb_backend|voyager-backend-nginx"
+            
+            echo "========================================="
+            echo "✅ Deployment completed successfully!"
+            echo "🌐 Backend API: https://service.voyager.andrescortes.dev"
+            echo "📚 Swagger: https://service.voyager.andrescortes.dev/swagger"
+            echo "🏥 Health: https://service.voyager.andrescortes.dev/health"

@@ -1,12 +1,11 @@
 ﻿using CrudCloudDb.Core.Enums;
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
 
 namespace CrudCloudDb.Core.Entities
 {
     public class Subscription
     {
-        public Guid Id { get; set; }
+        public Guid Id { get; set; } = Guid.NewGuid();
         
         [Required]
         public Guid UserId { get; set; }
@@ -22,8 +21,10 @@ namespace CrudCloudDb.Core.Entities
         
         public DateTime EndDate { get; set; }
         
-        public string? MercadoPagoSubscriptionId { get; set; }
-        
+        public string? MercadoPagoOrderId { get; set; }
+
+        public string? MercadoPagoPaymentId { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }
