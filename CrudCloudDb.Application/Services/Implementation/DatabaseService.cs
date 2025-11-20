@@ -1,4 +1,4 @@
-﻿﻿using CrudCloudDb.Application.Services.Interfaces;
+﻿﻿﻿using CrudCloudDb.Application.Services.Interfaces;
 using CrudCloudDb.Application.DTOs.Database;
 using CrudCloudDb.Application.DTOs.Email;
 using CrudCloudDb.Application.Interfaces.Repositories;
@@ -64,49 +64,28 @@ namespace CrudCloudDb.Application.Services.Implementation
                 throw new InvalidOperationException("User has no plan assigned");
             }
 
-            // 2. ⭐ VALIDAR LÍMITES DEL PLAN (LÓGICA CORRECTA)
-            // Contar TODAS las bases de datos del mismo motor que NO se hayan eliminado permanentemente
-            // Esto incluye: Running + Stopped + Deleted (dentro del período de gracia de 30 días)
+            // 2. ⭐ VALIDAR LÍMITES DEL PLAN (LÓGICA CORREGIDA)
+            // ✅ Contar SOLO las bases de datos ACTIVAS del mismo motor
+            // ❌ NO contar las eliminadas (Status = Deleted), ni aunque estén en período de gracia
             var allUserDatabases = (await _databaseRepository.GetByUserIdAsync(userId)).ToList();
             
-            // Filtrar solo las del mismo motor que aún existen (no eliminadas permanentemente)
-            var databasesForEngine = allUserDatabases
-                .Where(db => db.Engine == request.Engine)
+            // Filtrar solo las del mismo motor que están ACTIVAS (no eliminadas)
+            var activeDatabasesForEngine = allUserDatabases
+                .Where(db => db.Engine == request.Engine && db.Status != DatabaseStatus.Deleted)
                 .ToList();
             
-            var totalDatabasesForEngine = databasesForEngine.Count;
+            var totalActiveDatabases = activeDatabasesForEngine.Count;
 
-            // Contar cuántas están activas vs desactivadas (solo para el mensaje)
-            var activeDatabases = databasesForEngine
-                .Count(db => db.Status != DatabaseStatus.Deleted);
-            
-            var deletedDatabases = databasesForEngine
-                .Count(db => db.Status == DatabaseStatus.Deleted);
+            _logger.LogInformation($"📊 User has {totalActiveDatabases}/{user.CurrentPlan.DatabaseLimitPerEngine} active {request.Engine} databases");
 
-            _logger.LogInformation($"📊 User has {totalDatabasesForEngine}/{user.CurrentPlan.DatabaseLimitPerEngine} {request.Engine} databases ({activeDatabases} active, {deletedDatabases} deactivated)");
-
-            // ⭐ VALIDACIÓN: El total (activas + desactivadas) NO debe exceder el límite del plan
-            if (totalDatabasesForEngine >= user.CurrentPlan.DatabaseLimitPerEngine)
+            // ⭐ VALIDACIÓN: Solo las activas cuentan contra el límite del plan
+            if (totalActiveDatabases >= user.CurrentPlan.DatabaseLimitPerEngine)
             {
                 _logger.LogWarning($"⚠️ User {userId} has reached the maximum limit for {request.Engine} databases ({user.CurrentPlan.DatabaseLimitPerEngine})");
                 
-                var errorMessage = $"You have reached the maximum number of {request.Engine} databases allowed in your plan ({user.CurrentPlan.DatabaseLimitPerEngine}). ";
-                
-                if (deletedDatabases > 0)
-                {
-                    errorMessage += $"You currently have {activeDatabases} active and {deletedDatabases} deactivated database(s). " +
-                                   $"To create a new database, you must either:\n" +
-                                   $"1. Restore one of your deactivated databases (will receive new password via email), OR\n" +
-                                   $"2. Wait for a deactivated database to be permanently deleted after 30 days, OR\n" +
-                                   $"3. Upgrade your plan to get more database slots.";
-                }
-                else
-                {
-                    errorMessage += $"You currently have {activeDatabases} active database(s). " +
-                                   $"To create a new database, you must either:\n" +
-                                   $"1. Deactivate and then wait 30 days for permanent deletion, OR\n" +
-                                   $"2. Upgrade your plan to get more database slots.";
-                }
+                var errorMessage = $"You have reached the maximum number of {request.Engine} databases allowed in your plan ({user.CurrentPlan.DatabaseLimitPerEngine}). " +
+                                   $"You currently have {totalActiveDatabases} active database(s). " +
+                                   $"To create a new database, you must either delete an existing database or upgrade your plan.";
                 
                 throw new InvalidOperationException(errorMessage);
             }
@@ -136,14 +115,14 @@ namespace CrudCloudDb.Application.Services.Implementation
             await _webhookService.SendSuccesNotificationAsync(notificationTitle, notificationMessage);
             
 
-            _logger.LogInformation($"✅ Database {dbInstance.Name} created successfully ({totalDatabasesForEngine + 1}/{user.CurrentPlan.DatabaseLimitPerEngine})");
+            _logger.LogInformation($"✅ Database {dbInstance.Name} created successfully ({totalActiveDatabases + 1}/{user.CurrentPlan.DatabaseLimitPerEngine})");
 
             // 6. Mapear a DTO y devolver
             return MapToDto(dbInstance, checkRunning: false);
         }
 
         /// <summary>
-        /// Obtiene todas las bases de datos ACTIVAS de un usuario (excluye las eliminadas)
+        /// Obtiene todas las bases de datos de un usuario (incluyendo las eliminadas en período de gracia)
         /// </summary>
         public async Task<List<DatabaseResponseDto>> GetUserDatabasesAsync(Guid userId)
         {
@@ -151,14 +130,13 @@ namespace CrudCloudDb.Application.Services.Implementation
 
             var databases = await _databaseRepository.GetByUserIdAsync(userId);
 
-            // 🔒 FILTRAR: Solo mostrar bases de datos NO eliminadas
-            var activeDatabases = databases
-                .Where(db => db.Status != DatabaseStatus.Deleted)
-                .ToList();
+            // ✅ DEVOLVER TODAS: Incluir bases de datos activas Y eliminadas (en período de gracia)
+            // El frontend decidirá cómo mostrarlas según el status
+            var allDatabases = databases.ToList();
 
-            _logger.LogInformation($"✅ Found {activeDatabases.Count} active databases for user {userId}");
+            _logger.LogInformation($"✅ Found {allDatabases.Count} databases for user {userId} (including deleted ones in grace period)");
 
-            return activeDatabases.Select(db => MapToDto(db, checkRunning: false)).ToList();
+            return allDatabases.Select(db => MapToDto(db, checkRunning: false)).ToList();
         }
 
         /// <summary>
@@ -182,22 +160,12 @@ namespace CrudCloudDb.Application.Services.Implementation
                 throw new UnauthorizedAccessException("You don't have access to this database");
             }
 
-            // Verificar estado del contenedor
-            var isRunning = await _dockerService.IsContainerRunningAsync(database.ContainerId);
-
-            // Actualizar estado si cambió
-            if (isRunning && database.Status != DatabaseStatus.Running)
-            {
-                _logger.LogInformation($"🔄 Updating database {databaseId} status to Running");
-                database.Status = DatabaseStatus.Running;
-                await _databaseRepository.UpdateAsync(database);
-            }
-            else if (!isRunning && database.Status == DatabaseStatus.Running)
-            {
-                _logger.LogInformation($"🔄 Updating database {databaseId} status to Stopped");
-                database.Status = DatabaseStatus.Stopped;
-                await _databaseRepository.UpdateAsync(database);
-            }
+            // ⭐ Verificar estado del contenedor MAESTRO (sin actualizar la BD automáticamente)
+            // Con contenedores maestros compartidos, el status debe ser manejado explícitamente
+            // por las operaciones de restore/delete, NO automáticamente al consultar
+            var isRunning = await _dockerService.IsContainerRunningAsync(database.MasterContainerId);
+            
+            _logger.LogInformation($"� Database {database.Name} status in DB: {database.Status}, Master container running: {isRunning}");
 
             return MapToDto(database, isRunning: isRunning);
         }
@@ -335,8 +303,9 @@ namespace CrudCloudDb.Application.Services.Implementation
         }
 
         /// <summary>
-        /// Restaura una base de datos marcada como eliminada (dentro del período de gracia de 30 días)
+        /// Restaura una base de datos marcada como eliminada o detenida (dentro del período de gracia de 30 días)
         /// ⭐ Genera una nueva password y restaura el acceso
+        /// ⭐ Puede restaurarse múltiples veces sin restricciones
         /// </summary>
         public async Task<bool> RestoreDatabaseAsync(Guid userId, Guid databaseId)
         {
@@ -356,9 +325,10 @@ namespace CrudCloudDb.Application.Services.Implementation
                 throw new UnauthorizedAccessException("You don't have access to this database");
             }
 
-            if (database.Status != DatabaseStatus.Deleted)
+            // ✅ CORRECCIÓN: Aceptar TANTO Deleted COMO Stopped
+            if (database.Status != DatabaseStatus.Deleted && database.Status != DatabaseStatus.Stopped)
             {
-                _logger.LogWarning($"⚠️ Database {databaseId} is not deleted, cannot restore");
+                _logger.LogWarning($"⚠️ Database {databaseId} is not in deleted/stopped state, cannot restore. Current status: {database.Status}");
                 return false;
             }
 
@@ -406,8 +376,8 @@ namespace CrudCloudDb.Application.Services.Implementation
             var engineName = database.Engine.ToString();
             var envVarName = $"DB_HOST_{engineName.ToUpperInvariant()}";
             var host = Environment.GetEnvironmentVariable(envVarName)
-                      ?? _configuration[$"DatabaseHosts:{engineName}"]
-                      ?? "localhost";
+                        ?? _configuration[$"DatabaseHosts:{engineName}"]
+                        ?? "localhost";
 
             var newConnectionString = database.Engine switch
             {
@@ -415,9 +385,11 @@ namespace CrudCloudDb.Application.Services.Implementation
                     $"Host={host};Port={database.Port};Database={database.DatabaseName};Username={database.Username};Password={newCredentials.Password}",
                 DatabaseEngine.MySQL =>
                     $"Server={host};Port={database.Port};Database={database.DatabaseName};Uid={database.Username};Pwd={newCredentials.Password}",
+                DatabaseEngine.SQLServer =>
+                    $"Server={host},{database.Port};Database={database.DatabaseName};User Id={database.Username};Password={newCredentials.Password};TrustServerCertificate=True",
                 DatabaseEngine.MongoDB =>
                     $"mongodb://{database.Username}:{Uri.EscapeDataString(newCredentials.Password)}@{host}:{database.Port}/",
-                _ => throw new NotSupportedException()
+                _ => throw new NotSupportedException($"Engine {database.Engine} is not supported for restore operation")
             };
 
             // ⭐ PASO 3: Restaurar el estado y actualizar credenciales
@@ -426,8 +398,23 @@ namespace CrudCloudDb.Application.Services.Implementation
             database.PasswordHash = newCredentials.PasswordHash;
             database.ConnectionString = newConnectionString;
 
-            _logger.LogInformation($"💾 Restoring database status to Running with new credentials");
+            // 🔍 DEBUG: Log ANTES de guardar
+            _logger.LogInformation($"� BEFORE UPDATE - Status: {database.Status}, ID: {database.Id}");
+            
+            _logger.LogInformation($"�💾 Restoring database status to Running with new credentials");
             await _databaseRepository.UpdateAsync(database);
+            
+            // 🔍 DEBUG: Verificar que se guardó correctamente
+            var verifyDb = await _databaseRepository.GetByIdAsync(database.Id);
+            _logger.LogInformation($"🔍 AFTER UPDATE - Status: {verifyDb?.Status}, Saved correctly: {verifyDb?.Status == DatabaseStatus.Running}");
+            
+            if (verifyDb?.Status != DatabaseStatus.Running)
+            {
+                _logger.LogError($"❌ CRITICAL ERROR: Database status was NOT saved correctly. Expected Running, got {verifyDb?.Status}");
+                throw new Exception($"Failed to save database status. Expected Running, got {verifyDb?.Status}");
+            }
+            
+            _logger.LogInformation($"✅ Database status saved: {database.Status}");
 
             // ⭐ PASO 4: Enviar email con las nuevas credenciales
             await _emailService.SendPasswordResetEmailAsync(new PasswordResetEmailDto
@@ -485,6 +472,7 @@ namespace CrudCloudDb.Application.Services.Implementation
                 Username = db.Username,
                 ConnectionString = db.ConnectionString,
                 CreatedAt = db.CreatedAt,
+                DeletedAt = db.DeletedAt,
                 CredentialsViewed = db.CredentialsViewed,
                 ContainerId = db.ContainerId.Length >= 12 ? db.ContainerId[..12] : db.ContainerId,
                 IsRunning = isRunning ?? (checkRunning ? db.Status == DatabaseStatus.Running : false)
