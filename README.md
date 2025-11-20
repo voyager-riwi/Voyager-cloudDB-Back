@@ -36,6 +36,7 @@
 - [Monitoreo y Logs](#-monitoreo-y-logs)
 - [Contribución](#-contribución)
 - [Equipo](#-equipo)
+- [Diagramas](#-diagramas)
 - [Licencia](#-licencia)
 
 ---
@@ -1323,6 +1324,20 @@ Este proyecto fue desarrollado por el equipo **Voyager** como proyecto final del
 
 ---
 
+## 📊 Diagramas
+
+### Casos de Uso
+Visualiza todos los casos de uso del sistema organizados por módulos funcionales:
+- **[Diagrama de Casos de Uso](https://drive.google.com/file/d/1I3EXjk6hH1IEkvMZj81HPc-8Xj7RZtF4/view?usp=drive_link)**
+
+### Diagrama de Clases
+Explora la arquitectura completa del sistema con todas las entidades, servicios y relaciones:
+- **[Diagrama de Clases](https://drive.google.com/file/d/1nZDh1Ft-oZjAmSf4CgdqU1SIJqoKLvt0/view?usp=drive_link)**
+
+Estos diagramas complementan la documentación de arquitectura disponible en [ARCHITECTURE.md](./ARCHITECTURE.md).
+
+---
+
 ## 📄 Licencia
 
 Este proyecto es software educativo desarrollado como proyecto final. Se permite su uso con fines educativos y de demostración.
@@ -1353,4 +1368,7 @@ Para reportar bugs o solicitar features, por favor abre un issue en GitHub.
 ![PotterCloud](https://img.shields.io/badge/PotterCloud-Production_Ready-success?style=for-the-badge)
 
 </div>
+
+
+
 
