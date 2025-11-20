@@ -1,8 +1,4 @@
-﻿<<<<<<< Updated upstream
 # 🧙‍♂️ PotterCloud - Backend API
-=======
-﻿# 🧙‍♂️ PotterCloud - Backend API
->>>>>>> Stashed changes
 
 <div align="center">
 
@@ -1386,4 +1382,5 @@ Para reportar bugs o solicitar features, por favor abre un issue en GitHub.
 ![PotterCloud](https://img.shields.io/badge/PotterCloud-Production_Ready-success?style=for-the-badge)
 
 </div>
+
 
