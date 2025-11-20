@@ -1,4 +1,8 @@
+﻿<<<<<<< Updated upstream
 # 🧙‍♂️ PotterCloud - Backend API
+=======
+﻿# 🧙‍♂️ PotterCloud - Backend API
+>>>>>>> Stashed changes
 
 <div align="center">
 
@@ -13,6 +17,20 @@
 [Explorar API](https://service.voyager.andrescortes.dev) • [Frontend](https://voyager.andrescortes.dev) • [Documentación](#-documentación)
 
 </div>
+
+---
+
+## 🚀 Inicio Rápido
+
+¿Necesitas desplegar el backend? Aquí tienes accesos rápidos:
+
+| Documento | Descripción | Para quién |
+|-----------|-------------|------------|
+| 📘 **[GUIA_DESPLIEGUE_MANUAL.md](./GUIA_DESPLIEGUE_MANUAL.md)** | Guía completa paso a paso | DevOps / Backend |
+| 📋 **[RESUMEN_DESPLIEGUE.md](./RESUMEN_DESPLIEGUE.md)** | Resumen ejecutivo de cambios | Product Managers |
+| 🔧 **[deploy-production.sh](./deploy-production.sh)** | Script de despliegue automatizado | DevOps |
+
+**¿Primera vez desplegando?** → Lee [GUIA_DESPLIEGUE_MANUAL.md](./GUIA_DESPLIEGUE_MANUAL.md)
 
 ---
 
@@ -36,6 +54,7 @@
 - [Monitoreo y Logs](#-monitoreo-y-logs)
 - [Contribución](#-contribución)
 - [Equipo](#-equipo)
+- [Diagramas](#-diagramas)
 - [Licencia](#-licencia)
 
 ---
@@ -1320,6 +1339,20 @@ Este proyecto fue desarrollado por el equipo **Voyager** como proyecto final del
 - **RIWI** por la formación y mentoría
 - **Clever Cloud** por la inspiración
 - **Comunidad .NET** por las herramientas y recursos
+
+---
+
+## 📊 Diagramas
+
+### Casos de Uso
+Visualiza todos los casos de uso del sistema organizados por módulos funcionales:
+- **[Diagrama de Casos de Uso](https://drive.google.com/file/d/1I3EXjk6hH1IEkvMZj81HPc-8Xj7RZtF4/view?usp=drive_link)**
+
+### Diagrama de Clases
+Explora la arquitectura completa del sistema con todas las entidades, servicios y relaciones:
+- **[Diagrama de Clases](https://drive.google.com/file/d/1nZDh1Ft-oZjAmSf4CgdqU1SIJqoKLvt0/view?usp=drive_link)**
+
+Estos diagramas complementan la documentación de arquitectura disponible en [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ---
 
